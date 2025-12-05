@@ -15,7 +15,7 @@ Many CLI tools check `isatty()` to decide behavior:
 - **Claude CLI**: Requires TTY for interactive mode, else crashes
 - **Git**: Colors output only when TTY detected
 - **Any NODE JS app using INK library for TUI**
-- **Python**: Interactive mode depends on TTY
+- **Pythonw**: Interactive mode depends on TTY
 
 Without a real PTY, hiding a console window breaks these tools because redirected STDIN/STDOUT report `isatty() = false`.
 
@@ -318,3 +318,4 @@ stateDiagram-v2
 ### Note
 
 The child process is killed when headless-terminal is terminated (even forcefully). This is by design to prevent orphaned processed during testing or failure scenarios.
+
