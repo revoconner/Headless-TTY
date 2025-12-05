@@ -52,6 +52,13 @@ headless-tty.exe cmd /c dir
 ### Use with pythonw to launch claude code cli in headless mode but keep session alive
 
 ```python
+SW_HIDE = 0
+STARTF_USESHOWWINDOW = 0x00000001
+_startupinfo = subprocess.STARTUPINFO()
+_startupinfo.dwFlags |= STARTF_USESHOWWINDOW
+
+_startupinfo.wShowWindow = SW_HIDE
+
 headless_tty_exe = "path_to/headless-tty.exe"
 ai_folder = r"path\to\folder"
 system_prompt = "You will only say I am claude, to any inputs. You can say a variation of I am claude, such as I am Claaaaaude, or I AM CLAUDE but you are not allowed to say anything else at all for this entire session"
@@ -63,9 +70,9 @@ cmd = [
     "--append-system-prompt", system_prompt
 ]
 
-self.headless_process = subprocess.Popen(
+headless_process = subprocess.Popen(
     cmd,
-    startupinfo=startupinfo,
+    startupinfo=_startupinfo,
     creationflags=subprocess.CREATE_NEW_CONSOLE,
     cwd=str(ai_folder)
 )
@@ -77,7 +84,7 @@ self.headless_process = subprocess.Popen(
 |--------|---------|-------------|
 | `--width <cols>` | 120 | Terminal width in columns |
 | `--height <rows>` | 40 | Terminal height in rows |
-| `--help`, `-h` | | Show help message |
+| `--help`, `-h` | | Show this message including version number |
 
 ## Library Usage
 
