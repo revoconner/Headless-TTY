@@ -320,15 +320,16 @@ stateDiagram-v2
     class Stopping stopState
 ```
 
-### Note
+---
 
-The child process is killed when headless-terminal is terminated (even forcefully). This is by design to prevent orphaned processed during testing or failure scenarios.
-
-
-### A notice to all users
+### LICENSE - LIMITED COMMERCIAL USE LICENSE
 
 Please read the LICENSE, as referred to the document at (LICENSE)[LICENSE] before contributing,
-forking, or using the product. Last license update date: **06 December, 2025**.
+forking, or using the product. 
+
+Last license update date: **06 December, 2025**.
+
+---
 
 ### Trademark Notice and Disclaimer
 
