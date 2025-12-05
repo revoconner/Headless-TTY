@@ -23,7 +23,7 @@ Without a real PTY, hiding a console window breaks these tools because redirecte
 
 ### Requirements
 - Windows 10 version 1809+ (ConPTY support)
-- Clang (from LLVM project or MSVC build tools)
+- clang
 - CMake 3.16+
 
 ### Build Steps
@@ -52,16 +52,8 @@ headless-tty.exe cmd /c dir
 ### Use with pythonw to launch claude code cli in headless mode but keep session alive
 
 ```python
-SW_HIDE = 0
-STARTF_USESHOWWINDOW = 0x00000001
-_startupinfo = subprocess.STARTUPINFO()
-_startupinfo.dwFlags |= STARTF_USESHOWWINDOW
-
-_startupinfo.wShowWindow = SW_HIDE
-
 headless_tty_exe = "path_to/headless-tty.exe"
 ai_folder = r"path\to\folder"
-system_prompt = "You will only say I am claude, to any inputs. You can say a variation of I am claude, such as I am Claaaaaude, or I AM CLAUDE but you are not allowed to say anything else at all for this entire session"
 cmd = [
     str(headless_tty_exe),
     "--",
@@ -70,9 +62,9 @@ cmd = [
     "--append-system-prompt", system_prompt
 ]
 
-headless_process = subprocess.Popen(
+self.headless_process = subprocess.Popen(
     cmd,
-    startupinfo=_startupinfo,
+    startupinfo=startupinfo,
     creationflags=subprocess.CREATE_NEW_CONSOLE,
     cwd=str(ai_folder)
 )
@@ -84,7 +76,7 @@ headless_process = subprocess.Popen(
 |--------|---------|-------------|
 | `--width <cols>` | 120 | Terminal width in columns |
 | `--height <rows>` | 40 | Terminal height in rows |
-| `--help`, `-h` | | Show this message including version number |
+| `--help`, `-h` | | Show help message |
 
 ## Library Usage
 
@@ -117,10 +109,6 @@ int main() {
     return exitCode;
 }
 ```
-### Note
-
-The child process is killed when headless-terminal is terminated (even forcefully). 
-This is by design to prevent orphaned processed during testing or failure scenarios.
 
 ## API Reference
 
@@ -327,25 +315,6 @@ stateDiagram-v2
     class Stopping stopState
 ```
 
----
+### Note
 
-### LICENSE - LIMITED COMMERCIAL USE LICENSE
-
-Please read the LICENSE, as referred to the document at (LICENSE)[LICENSE] before contributing,
-forking, or using the product. 
-
-Last license update date: **06 December, 2025**.
-
----
-
-### Trademark Notice and Disclaimer
-
-All trademarks, service marks, and product names mentioned in this repository are the property of their respective owners
-and are used solely for identification and descriptive purposes.
-
-- "Claude" and "Anthropic" are trademarks of Anthropic, PBC.
-- "Gemini" and "Google" are trademarks of Alphabet Inc. and/or its subsidiaries.
-- "Codex" and "OpenAI" are trademarks of OpenAI, Inc.
-
-This project is not affiliated with, endorsed by, or sponsored by any of the above companies. References to their products
-are provided solely as examples of compatible use cases.
+The child process is killed when headless-terminal is terminated (even forcefully). This is by design to prevent orphaned processed during testing or failure scenarios.
