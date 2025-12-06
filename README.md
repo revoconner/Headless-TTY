@@ -346,5 +346,6 @@ And clean up associated code.
 
 Free for non-commercial use (even in commercial devices) and for commercial use below USD 50000 gross annual income threshold. 
 
-For a complete license read (LICENSE)[LICENSE]
+For a complete license read [LICENSE]
+
 
