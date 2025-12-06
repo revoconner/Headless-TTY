@@ -319,3 +319,23 @@ stateDiagram-v2
 
 The child process is killed when headless-terminal is terminated (even forcefully). This is by design to prevent orphaned processed during testing or failure scenarios.
 
+For whatever reason if you do not want it, remove from pty.cpp
+
+```cpp
+m_hJob = CreateJobObjectW(NULL, NULL);
+    if (m_hJob) {
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION jeli = {};
+        jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        SetInformationJobObject(m_hJob, JobObjectExtendedLimitInformation, &jeli, sizeof(jeli));
+        AssignProcessToJobObject(m_hJob, m_hProcess);
+    }
+
+    m_running.store(true);
+    m_stop_requested.store(false);
+
+    return true;
+}
+
+``` 
+
+And clean up associated code. 
