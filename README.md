@@ -345,7 +345,7 @@ And clean up associated code.
 ### License
 
 Free for non-commercial use (even in commercial devices) and for commercial use below USD 50000 gross annual income threshold. 
+Read LICENSE for details.
 
-For a complete license read [LICENSE]
 
 
