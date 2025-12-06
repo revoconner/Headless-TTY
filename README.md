@@ -345,7 +345,11 @@ And clean up associated code.
 ### License
 
 Free for non-commercial use (even in commercial devices) and for commercial use below USD 50000 gross annual income threshold. 
+
+If you want a waiver, please get in touch - https://github.com/revoconner/Headless-TTY/discussions/1 
+
 Read LICENSE for details.
+
 
 
 
