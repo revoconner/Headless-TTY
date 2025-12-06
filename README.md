@@ -49,7 +49,7 @@ headless-tty.exe --width 80 --height 24 python
 headless-tty.exe cmd /c dir
 ```
 
-### Use with pythonw to launch claude code cli in headless mode but keep session alive
+### Use with pythonw (example use case, not limited to) to launch claude code cli in headless mode but keep session alive
 
 ```python
 headless_tty_exe = "path_to/headless-tty.exe"
@@ -346,6 +346,7 @@ And clean up associated code.
 
 Free for non-commercial use (even in commercial devices) and for commercial use below USD 50000 gross annual income threshold. 
 Read LICENSE for details.
+
 
 
 
