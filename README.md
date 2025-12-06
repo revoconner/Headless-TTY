@@ -70,15 +70,7 @@ self.headless_process = subprocess.Popen(
 )
 ```
 
-### Options
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--width <cols>` | 120 | Terminal width in columns |
-| `--height <rows>` | 40 | Terminal height in rows |
-| `--help`, `-h` | | Show help message |
-
-## Library Usage
+### Library Usage
 
 You can also use the ConPTY wrapper as a library in your own C++ projects:
 
@@ -109,6 +101,16 @@ int main() {
     return exitCode;
 }
 ```
+
+### Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--width <cols>` | 120 | Terminal width in columns |
+| `--height <rows>` | 40 | Terminal height in rows |
+| `--help`, `-h` | | Show help message |
+
+
 
 ## API Reference
 
@@ -339,3 +341,4 @@ m_hJob = CreateJobObjectW(NULL, NULL);
 ``` 
 
 And clean up associated code. 
+
