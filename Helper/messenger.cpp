@@ -4,6 +4,12 @@ Such apps while will get the message from emulator but won't process return key 
  messenger intended_pid "hello world"
  sends enter automatically after text. 
 
+
+build: g++ -o messenger.exe messenger.cpp -static -s -mwindows 
+-mwindows flag is so that there is no console creation during runtime.
+This app can send keystrokes to any PID, and as such can pose a security risk. 
+This file or binary doesn't contribute directly to the Headless TTY and is just a helper executable. 
+
 */
 
 #include <windows.h>
