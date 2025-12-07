@@ -155,6 +155,8 @@ High-level wrapper that manages the full lifecycle.
 
 ## How It Works
 
+**Note:** - All mermaid flow charts has been implemented by using AI, then checked by the developer.
+
 ### Architecture Overview
 
 ```mermaid
@@ -359,7 +361,7 @@ stateDiagram-v2
     class Stopping stopState
 ```
 
-### Note
+## Note
 
 **Bidirectional Process Termination**
 
@@ -506,6 +508,7 @@ If you want a waiver, please get in touch - https://github.com/revoconner/Headle
 
 
 Read LICENSE for details, the LICENSE will take precedence over the above given summary in a court of Law, if a conflict presents itself.
+
 
 
 
