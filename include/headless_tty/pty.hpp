@@ -58,7 +58,19 @@ public:
      @return Exit code of the process, or -1 on error
      */
     int wait(DWORD timeout_ms = INFINITE);
-    bool resize(const TerminalSize& size);
+    bool resize(const TerminalSize& size); 
+    /*
+    Not used in the headless-tty since its
+    meant to be headless. 
+    #include <headless_tty/pty.hpp>
+
+    headless_tty::ConPTY pty;
+    pty.initialize({120, 40});
+    pty.spawn(L"cmd.exe");
+    pty.start_reading();
+    pty.resize({80, 24});
+    */
+
     std::string get_last_error() const;
 
 private:
