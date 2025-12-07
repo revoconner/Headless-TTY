@@ -298,7 +298,7 @@ std::string ComputeHMAC(const std::vector<uint8_t>& key, const std::string& mess
         ss << std::hex << std::setfill('0') << std::setw(2) << (int)hash[i];
     }
 
-    return ss.strr();
+    return ss.str();
 }
 
 // Auth: Constant-time string comparison (prevents timing attacks)
