@@ -29,7 +29,7 @@ void signal_handler(int signum) {
 
 
 void print_usage(const char* program_name) {
-    std::cerr << "headless-tty v1.5.0 - A headless terminal that keeps isatty() = true\n\n";
+    std::cerr << "headless-tty v2.0.0 - A headless terminal that keeps isatty() = true\n\n";
     std::cerr << "Usage: " << program_name << " [options] [command] [args...]\n\n";
     std::cerr << "Options:\n";
     std::cerr << "  --width <cols>     Terminal width (default: 120)\n";
@@ -40,7 +40,7 @@ void print_usage(const char* program_name) {
     std::cerr << "\n";
     std::cerr << "Examples:\n";
     std::cerr << "  " << program_name << " app_name\n";
-    std::cerr << "  " << program_name << " --width 80 --height 24 python\n";
+    std::cerr << "  " << program_name << " --width 80 --height 24 pythonw\n";
     std::cerr << "  " << program_name << " cmd /c dir\n";
 }
 
@@ -173,8 +173,30 @@ void stdin_forwarder(headless_tty::HeadlessTTY& tty) {
 }
 
 int main(int argc, char* argv[]) {
-    
+
     Args args = parse_args(argc, argv);
+
+    /* 
+    Detect if we have a console attached (for GUI subsystem support)
+    If a process is not a console app, do not open console.
+    If a console app is detected keep input/output true
+
+    This allows the headless-TTY to open any GUI app such as notepad 
+    without showing a console.
+
+    As well as open console apps with isatty()=True
+    without showing a console. 
+    */
+    
+    bool has_console = false;
+    HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
+    DWORD console_mode;
+    if (hStdin != INVALID_HANDLE_VALUE && hStdin != NULL) {
+        // Check if it's a console or a pipe (both are valid for I/O)
+        if (GetConsoleMode(hStdin, &console_mode) || GetFileType(hStdin) == FILE_TYPE_PIPE) {
+            has_console = true;
+        }
+    }
 
     if (args.help) {
         print_usage(argv[0]);
@@ -187,41 +209,50 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    
+
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
-    // Set stdout to binary mode for raw output
-    _setmode(_fileno(stdout), _O_BINARY);
-    _setmode(_fileno(stderr), _O_BINARY);
+    // Set stdout to binary mode for raw output (only if we have valid handles)
+    if (has_console) {
+        _setmode(_fileno(stdout), _O_BINARY);
+        _setmode(_fileno(stderr), _O_BINARY);
+    }
 
     // Creation Happens here XD
     headless_tty::HeadlessTTY tty;
 
-    
+
     headless_tty::Config config;
     config.size.cols = args.width;
     config.size.rows = args.height;
     config.command = args.command;
     config.args = args.args;
 
-    
-    tty.set_output_callback([](const uint8_t* data, size_t length) {
-        // Write directly to stdout
-        DWORD bytesWritten;
-        WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), data, static_cast<DWORD>(length), &bytesWritten, NULL);
-    });
+    // Only set output callback if we have somewhere to write
+    if (has_console) {
+        tty.set_output_callback([](const uint8_t* data, size_t length) {
+            // Write directly to stdout
+            DWORD bytesWritten;
+            WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), data, static_cast<DWORD>(length), &bytesWritten, NULL);
+        });
+    }
 
-    
+
     if (!tty.start(config)) {
-        std::cerr << "Failed to start headless TTY: " << tty.get_last_error() << std::endl;
+        if (has_console) {
+            std::cerr << "Failed to start headless TTY: " << tty.get_last_error() << std::endl;
+        }
         return 1;
     }
 
-    
-    std::thread stdin_thread(stdin_forwarder, std::ref(tty));
+    // Only start stdin forwarding if we have a console
+    std::thread stdin_thread;
+    if (has_console) {
+        stdin_thread = std::thread(stdin_forwarder, std::ref(tty));
+    }
 
-    
+
     while (tty.is_running() && !g_shutdown_requested.load()) {
         Sleep(100);
     }
@@ -233,7 +264,7 @@ int main(int argc, char* argv[]) {
         stdin_thread.join();
     }
 
-    
+
     int exitCode = tty.wait(0);
 
     return exitCode >= 0 ? exitCode : 0;

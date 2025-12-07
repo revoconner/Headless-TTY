@@ -19,6 +19,9 @@ Many CLI tools check `isatty()` to decide behavior:
 
 Without a real PTY, hiding a console window breaks these tools because redirected STDIN/STDOUT report `isatty() = false`.
 
+## Does a non developer has any usage of it?
+Yes!! 
+
 ## Building
 
 ### Requirements
@@ -52,21 +55,18 @@ headless-tty.exe cmd /c dir
 ### Use with pythonw (example use case, not limited to) to launch claude code cli in headless mode but keep session alive
 
 ```python
-headless_tty_exe = "path_to/headless-tty.exe"
-ai_folder = r"path\to\folder"
+import subprocess
+
+headless_tty_exe = "headless-tty.exe"
 cmd = [
     str(headless_tty_exe),
     "--",
-    "claude",
-    "--permission-mode", "bypassPermissions",
-    "--append-system-prompt", system_prompt
+    "claude"
 ]
 
-self.headless_process = subprocess.Popen(
+headless_process = subprocess.Popen(
     cmd,
-    startupinfo=startupinfo,
-    creationflags=subprocess.CREATE_NEW_CONSOLE,
-    cwd=str(ai_folder)
+    creationflags=subprocess.CREATE_NEW_CONSOLE
 )
 ```
 
@@ -355,7 +355,7 @@ but won't process return key to send.
 
 **Implementation pseudocode:**
 
-```
+```python
 pseudocode: messenger_wrapper.py
 
 import os, time, hmac, hashlib, subprocess, secrets
@@ -404,13 +404,61 @@ auth.send("--escape")
 ---
 
 
-### License
+## Changelog
 
-Free for non-commercial use (even in commercial devices) and for commercial use below USD 50000 gross annual income threshold. 
+#### 1.0.0
+**Development** - not released
+
+#### 1.5.0
+**Initial release**
+- Uses c++17 standard
+- Keeps isatty()=True for console TUI apps without showing console.
+- Shows console for GUI apps. For example starting `headless-tty.exe -- notepad` will show a console (empty).
+
+#### 2.0.0
+**Second release** 
+- Uses c++23
+- Comes with helper binary messenger.exe with authentication pipeline built in (NO server file, but pseudocode present in Readme.md)
+- Added truly headless mode
+    - Keeps console hidden for GUI apps for example `headless-tty.exe -- notepad` shows no console, but killing headless-tty process does kil
+    - Keeps console hidden for console apps while keeping isatty()=True, for example `headless-tty.exe -- claude` shows no console but keeps claude code CLI INK app hidden in interactive mode and isatty()=True (or else it would have crashed)
+    - Replaced depracated call.
+- Comes with an example showcase file written in python `usage_example.py` to help showcase the Software's potential.
+    
+
+---
+
+### License in short
+
+<details><summary>Meaning of the word "The Software" and "Derivative Work" </summary>
+<br>
+"The Software" refers to the source code, object code, documentation, and any other materials contained in this
+repository, including any modified version of any of it.
+<br>
+"Derivative Work" or "derivatives" means any work that is based on or derived from the Software, such as modified application that has been forked from this repo.
+</details>
+<br>
+<details><summary>Is the Software free for non commercial use? </summary>
+<br>
+Yes!
+</details>
+<br>
+<details><summary>Can I use it on a computer I normally use for work, and other commercial activities?</summary>
+<br>
+Yes! As long as you are not using "the Software" or it's "Derivative Work" for commercial use or sublicensing, it's free for you<br>
+and the gross annual income threshold does not apply to you. 
+</details>
+<br>
+<details><summary>Does that mean if my income is more than $50,000 but I use the Software non-commercially, do I have to get another license?</summary>
+<br>
+No, as long as you do not use the Software or Derivative work to generate that income, it does not count towards commercial usage and the threshold limit does not apply.
+</details>
+<br>
 
 If you want a waiver, please get in touch - https://github.com/revoconner/Headless-TTY/discussions/1 
 
-Read LICENSE for details.
+
+Read LICENSE for details, the LICENSE will take precedence over the above given summary in a court of Law, if a conflict presents itself.
 
 
 

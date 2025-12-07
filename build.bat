@@ -9,7 +9,8 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 echo Building executable...
-clang++ -O3 -Wall -Wextra -std=c++23 -fno-exceptions -I include -o headless-tty.exe src/pty.cpp src/main.cpp resources/app.res -static
+clang++ -O3 -Wall -Wextra -std=c++17 -fno-exceptions -I include -o headless-tty.exe src/pty.cpp src/main.cpp resources/app.res -static -Wl,/SUBSYSTEM:WINDOWS -Wl,/ENTRY:mainCRTStartup
+
 if %ERRORLEVEL%==0 echo Build successful
 
 echo Building helper...
