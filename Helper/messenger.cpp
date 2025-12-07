@@ -225,7 +225,7 @@ std::vector<uint8_t> HexDecode(const std::string& hex) {
     bytes.reserve(hex.length() / 2);
     for (size_t i = 0; i < hex.length(); i += 2) {
         unsigned int byte;
-        if (sscanf(hex.c_str() + i, "%02x", &byte) != 1) {
+        if (sscanf_s(hex.c_str() + i, "%02x", &byte) != 1) {
             return std::vector<uint8_t>();  // Parse error
         }
         bytes.push_back(static_cast<uint8_t>(byte));

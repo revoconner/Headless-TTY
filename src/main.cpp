@@ -58,8 +58,8 @@ std::wstring to_wstring(const std::string& str) {
 
 
 struct Args {
-    uint16_t width = 120;
-    uint16_t height = 40;
+    uint16_t width = 10;
+    uint16_t height = 10;
     std::wstring command = L"cmd.exe";
     std::wstring args;
     bool help = false;
