@@ -19,8 +19,18 @@ Many CLI tools check `isatty()` to decide behavior:
 
 Without a real PTY, hiding a console window breaks these tools because redirected STDIN/STDOUT report `isatty() = false`.
 
-## Does a non developer has any usage of it?
-Yes!! 
+## Does a non C++ developer has any use of it?
+Kind of! One still has to be somewhat technically inclined.
+
+When you want to start a CLI app headless at Windows starts using task scheduler, you usually create a bat file then a vbs script to spawn that bat file headless.
+
+You can now simple use headless-tty to spawn cmd, or powershell etc, then call whatver you want from there. A few examples: 
+
+- `headless-tty.exe -- cmd /c "pythonw main.py"` : run a python file main.py without console. Pythonw doesn't use console, and headless-tty calls pythonw without a visible console.
+- `headless-tty.exe -- cmd /c "ipconfig -all >%temp%\ipconfig.txt && notepad %temp%\ipconfig.txt"` : Prints ipconfig to a file in temporary folder, then opens it in notepad, without ever showing console.
+- `headless-tty.exe -- powershell ".\myscript.ps1"` : run a powershell script without console. 
+
+These are basic example of a non cpp dev using this.
 
 ## Building
 
@@ -159,6 +169,7 @@ flowchart TB
     subgraph htty["headless-tty.exe"]
         fwd["Input Forwarder"]
         cb["Output Callback"]
+        mon["Monitor Thread"]
 
         subgraph pty["Windows ConPTY"]
             pc["Pseudo Console"]
@@ -168,7 +179,7 @@ flowchart TB
     end
 
     subgraph child["Child Process"]
-        proc["claude.exe / cmd.exe / etc"]
+        proc["powershell.exe / cmd.exe / pythonw.exe"]
         tty["isatty() = true"]
     end
 
@@ -181,8 +192,12 @@ flowchart TB
     pc --> pout
     pout -->|"read"| cb
     cb -->|"raw bytes"| stdout
+    mon -->|"waits on"| proc
+    proc -->|"exit"| mon
+    mon -->|"closes"| pc
 
     style stdin fill:#1a332a,stroke:#2d5a47
+    style mon fill:#2a2a3a,stroke:#4d4d6a
     style fwd fill:#1a332a,stroke:#2d5a47
     style pin fill:#1e3a2f,stroke:#2d5a47
     style stdout fill:#332a2a,stroke:#5a3d3d
@@ -225,6 +240,8 @@ sequenceDiagram
     end
 
     HTT->>HTT: start_reading()
+    HTT->>HTT: start monitor_thread()
+    Note over HTT: Monitor waits on child process handle
     HTT-->>App: success
 
     rect rgb(51, 42, 42)
@@ -234,6 +251,15 @@ sequenceDiagram
             Child->>HTT: output via PTY pipe
             HTT->>App: output_callback(data)
         end
+    end
+
+    rect rgb(42, 42, 51)
+        Note over HTT,Child: Child Exit Detection
+        Child->>HTT: process exits
+        HTT->>HTT: monitor_thread detects exit
+        HTT->>Win: ClosePseudoConsole()
+        Note over HTT: Pipes break, read_loop exits
+        HTT-->>App: is_running() = false
     end
 ```
 
@@ -258,6 +284,14 @@ flowchart LR
         rt --> so["STDOUT"]
     end
 
+    subgraph termination["Termination Path"]
+        direction LR
+        ce["Child Exit"] --> mt["Monitor Thread"]
+        mt --> cp["ClosePseudoConsole"]
+        cp --> pb["Pipes Break"]
+        pb --> pe["Parent Exit"]
+    end
+
     style si fill:#1a332a,stroke:#2d5a47
     style fw fill:#1a332a,stroke:#2d5a47
     style wp fill:#1e3a2f,stroke:#2d5a47
@@ -268,6 +302,11 @@ flowchart LR
     style rp fill:#3a2a2a,stroke:#5a3d3d
     style rt fill:#332a2a,stroke:#5a3d3d
     style so fill:#332a2a,stroke:#5a3d3d
+    style ce fill:#2a2a3a,stroke:#4d4d6a
+    style mt fill:#2a2a3a,stroke:#4d4d6a
+    style cp fill:#2a2a3a,stroke:#4d4d6a
+    style pb fill:#2a2a3a,stroke:#4d4d6a
+    style pe fill:#2a2a3a,stroke:#4d4d6a
 ```
 
 ### Process Lifecycle
@@ -294,10 +333,13 @@ stateDiagram-v2
     state Running {
         [*] --> Active
         Active --> Active: read/write
+        Active --> Monitoring: monitor_thread watches child
+        Monitoring --> Active
     }
 
-    Running --> Stopping: stop() or process exits
-    Running --> Stopping: parent killed
+    Running --> Stopping: stop() called
+    Running --> Stopping: parent killed (job object kills child)
+    Running --> Stopping: child exits (monitor closes PTY)
 
     state Stopping {
         [*] --> TerminateProcess
@@ -319,28 +361,30 @@ stateDiagram-v2
 
 ### Note
 
-The child process is killed when headless-terminal is terminated (even forcefully). This is by design to prevent orphaned processed during testing or failure scenarios.
+**Bidirectional Process Termination**
 
-For whatever reason if you do not want it, remove from pty.cpp
+The process lifecycle is managed bidirectionally:
+
+1. **Parent killed -> Child dies**: A Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` ensures the child process (and all its descendants) are terminated when headless-tty exits, even if killed forcefully.
+
+2. **Child exits -> Parent exits**: A monitor thread watches the child process handle. When the child exits (e.g., user closes notepad), the monitor calls `ClosePseudoConsole()` which terminates conhost and breaks the pipes, causing headless-tty to exit cleanly.
+    - Limitation: Although it works great for win32 apps as well as UWP apps (we are only talking about GUI here, all CLI apps works perfectly), there's a caveat in the UWP app, that it spawns the multiple PID. If you forcefully kill any child PID in the middle of the chain, you may leave orphan processes. 
+
+This prevents orphaned processes in both directions.
+
+**To disable parent->child termination**, remove from pty.cpp:
 
 ```cpp
 m_hJob = CreateJobObjectW(NULL, NULL);
-    if (m_hJob) {
-        JOBOBJECT_EXTENDED_LIMIT_INFORMATION jeli = {};
-        jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        SetInformationJobObject(m_hJob, JobObjectExtendedLimitInformation, &jeli, sizeof(jeli));
-        AssignProcessToJobObject(m_hJob, m_hProcess);
-    }
-
-    m_running.store(true);
-    m_stop_requested.store(false);
-
-    return true;
+if (m_hJob) {
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION jeli = {};
+    jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    SetInformationJobObject(m_hJob, JobObjectExtendedLimitInformation, &jeli, sizeof(jeli));
+    AssignProcessToJobObject(m_hJob, m_hProcess);
 }
-
 ```
 
-And clean up associated code. 
+**To disable child->parent termination**, remove `monitor_loop()` and related code. 
 
 ## Helper file - Messenger.cpp
 
@@ -416,13 +460,16 @@ auth.send("--escape")
 - Shows console for GUI apps. For example starting `headless-tty.exe -- notepad` will show a console (empty).
 
 #### 2.0.0
-**Second release** 
+**Second release**
 - Uses c++23
 - Comes with helper binary messenger.exe with authentication pipeline built in (NO server file, but pseudocode present in Readme.md)
 - Added truly headless mode
-    - Keeps console hidden for GUI apps for example `headless-tty.exe -- notepad` shows no console, but killing headless-tty process does kil
+    - Keeps console hidden for GUI apps for example `headless-tty.exe -- notepad` shows no console
     - Keeps console hidden for console apps while keeping isatty()=True, for example `headless-tty.exe -- claude` shows no console but keeps claude code CLI INK app hidden in interactive mode and isatty()=True (or else it would have crashed)
-    - Replaced depracated call.
+    - Replaced deprecated call
+- Bidirectional process termination
+    - Killing headless-tty kills the child process (Job Object)
+    - Closing/killing the child process causes headless-tty to exit cleanly (Monitor Thread)
 - Comes with an example showcase file written in python `usage_example.py` to help showcase the Software's potential.
     
 

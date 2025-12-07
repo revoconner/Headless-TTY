@@ -1,6 +1,5 @@
 #include "headless_tty/pty.hpp"
 #include <sstream>
-#include <iostream>
 
 namespace headless_tty {
 
@@ -30,6 +29,7 @@ ConPTY::ConPTY(ConPTY&& other) noexcept {
     m_running.store(other.m_running.load());
     m_stop_requested.store(other.m_stop_requested.load());
     m_read_thread = std::move(other.m_read_thread);
+    m_monitor_thread = std::move(other.m_monitor_thread);
     m_output_callback = std::move(other.m_output_callback);
     m_last_error = std::move(other.m_last_error);
 
@@ -64,6 +64,7 @@ ConPTY& ConPTY::operator=(ConPTY&& other) noexcept {
         m_running.store(other.m_running.load());
         m_stop_requested.store(other.m_stop_requested.load());
         m_read_thread = std::move(other.m_read_thread);
+        m_monitor_thread = std::move(other.m_monitor_thread);
         m_output_callback = std::move(other.m_output_callback);
         m_last_error = std::move(other.m_last_error);
 
@@ -304,11 +305,30 @@ void ConPTY::read_loop() {
     m_running.store(false);
 }
 
+void ConPTY::monitor_loop() {
+    if (!m_hProcess) return;
+
+    // Wait for the child process to exit
+    WaitForSingleObject(m_hProcess, INFINITE);
+
+    // Child exited - close the pseudo console to break pipes
+    // This will cause read_loop's ReadFile to return, allowing clean exit
+    if (m_hPC && !m_stop_requested.load()) {
+        ClosePseudoConsole(m_hPC);
+        m_hPC = nullptr;
+    }
+}
+
 void ConPTY::start_reading() {
     if (m_read_thread.joinable()) {
         return;
     }
     m_read_thread = std::thread(&ConPTY::read_loop, this);
+
+    // Start monitor thread to detect child process exit
+    if (!m_monitor_thread.joinable()) {
+        m_monitor_thread = std::thread(&ConPTY::monitor_loop, this);
+    }
 }
 
 bool ConPTY::write(const uint8_t* data, size_t length) {
@@ -344,6 +364,10 @@ void ConPTY::stop() {
 
     if (m_read_thread.joinable()) {
         m_read_thread.join();
+    }
+
+    if (m_monitor_thread.joinable()) {
+        m_monitor_thread.join();
     }
 
     m_running.store(false);
@@ -443,7 +467,7 @@ HeadlessTTY::~HeadlessTTY() {
 }
 
 bool HeadlessTTY::start(const Config& config) {
-    m_config = config;
+    // m_config = config;  // Unused
     m_pty = std::make_unique<ConPTY>();
 
     if (!m_pty->initialize(config.size)) {

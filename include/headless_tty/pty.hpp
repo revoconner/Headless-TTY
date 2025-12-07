@@ -66,7 +66,7 @@ public:
 
     headless_tty::ConPTY pty;
     pty.initialize({120, 40});
-    pty.spawn(L"cmd.exe");
+    pty.spawn(L"notepad.exe");
     pty.start_reading();
     pty.resize({80, 24});
     */
@@ -76,6 +76,7 @@ public:
 private:
     void cleanup();
     void read_loop();
+    void monitor_loop();
     bool create_pipes();
     bool create_pseudo_console(const TerminalSize& size);
     bool initialize_startup_info();
@@ -94,6 +95,7 @@ private:
     std::atomic<bool> m_running{ false };
     std::atomic<bool> m_stop_requested{ false };
     std::thread m_read_thread;
+    std::thread m_monitor_thread;
     mutable std::mutex m_mutex;
 
     // Callbacks
@@ -125,7 +127,7 @@ public:
 
 private:
     std::unique_ptr<ConPTY> m_pty;
-    Config m_config;
+    // Config m_config;  // Unused - kept for potential future use
 };
 
 } // namespace headless_tty

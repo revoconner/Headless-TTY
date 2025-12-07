@@ -9,8 +9,8 @@
 namespace headless_tty {
 
 // Buffer sizes
-constexpr size_t PTY_BUFFER_SIZE = 4096;
-constexpr size_t INPUT_BUFFER_SIZE = 128;
+constexpr size_t PTY_BUFFER_SIZE = 8192;
+constexpr size_t INPUT_BUFFER_SIZE = 4096;
 
 // Terminal dimensions
 struct TerminalSize {
@@ -21,7 +21,7 @@ struct TerminalSize {
 // Configuration
 struct Config {
     TerminalSize size = { 120, 40 };
-    std::wstring command = L"cmd.exe";
+    std::wstring command = L"notepad.exe";
     std::wstring args = L"";
     std::wstring working_dir = L"";
 };

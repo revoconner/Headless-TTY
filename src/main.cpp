@@ -36,7 +36,7 @@ void print_usage(const char* program_name) {
     std::cerr << "  --height <rows>    Terminal height (default: 40)\n";
     std::cerr << "  --help, -h         Show this help message\n";
     std::cerr << "\n";
-    std::cerr << "If no command is specified, cmd.exe is used.\n";
+    std::cerr << "If no command is specified, notepad.exe is used.\n";
     std::cerr << "\n";
     std::cerr << "Examples:\n";
     std::cerr << "  " << program_name << " app_name\n";
@@ -58,9 +58,9 @@ std::wstring to_wstring(const std::string& str) {
 
 
 struct Args {
-    uint16_t width = 10;
-    uint16_t height = 10;
-    std::wstring command = L"cmd.exe";
+    uint16_t width = 120;
+    uint16_t height = 40;
+    std::wstring command = L"notepad.exe";
     std::wstring args;
     bool help = false;
     bool error = false;
