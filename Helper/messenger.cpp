@@ -26,7 +26,7 @@ Security Implementation:
 4. Const time compare to prevent timing attac
 5. Secret from pipe not hardcoded. I recommend implementing per session refresh.
  *
-Build: g++ -o ink_injector.exe ink_injector_auth.cpp -static -s -mwindows -lbcrypt
+Build: g++ -o messenger.exe messenger.cpp -static -s -mwindows -lbcrypt
  *
 Usage:
   messenger.exe <PID> <command> <timestamp> <sig>  (text injection)
@@ -60,9 +60,9 @@ const int ERR_TIMESTAMP_EXPIRED = 408;
 const int ERR_PIPE_NOT_FOUND = 503;
 const int ERR_ATTACH_FAILED = 2;
 
-// Constants
+// Constants, use random uuid at runtime with another thing like server PID
 const int TIMESTAMP_WINDOW_SECONDS = 10;
-const char* DEFAULT_PIPE_NAME = "\\\\.\\pipe\\ClaudeInjectorAuth";
+const char* DEFAULT_PIPE_NAME = "\\\\.\\pipe\\InjectorAuth";
 
 // Auth Payload Structure
 struct AuthPayload {
@@ -423,10 +423,10 @@ void SendText(HANDLE hConsoleInput, const std::string& text) {
 
 // Print Usage
 void PrintUsage() {
-    std::cout << "Ink Injector v3.1 - Authenticated Input Injection" << std::endl;
+    std::cout << "Messenger v4.0 - Authenticated Input Injection" << std::endl;
     std::cout << std::endl;
     std::cout << "Usage:" << std::endl;
-    std::cout << "  ink_injector.exe <PID> <command> <timestamp> <sig>" << std::endl;
+    std::cout << "  messenger.exe <PID> <command> <timestamp> <sig>" << std::endl;
     std::cout << std::endl;
     std::cout << "All commands require HMAC-SHA256 authentication." << std::endl;
     std::cout << std::endl;
@@ -456,9 +456,9 @@ void PrintUsage() {
     std::cout << "  503  Auth pipe not found" << std::endl;
 }
 
-// Main Entry Point
-int main(int argc, char* argv[]) {
-    // Argument parsing - all commands now require 4 args
+//()()()()()()()//
+int main(int argc, char* const argv[]) { // Added const for linter to shut up
+    // Argument parsing requires 4 args
     if (argc < 5) {
         PrintUsage();
         return ERR_USAGE;
@@ -476,7 +476,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Step 2: Get auth payload from pipe
-    // This also triggers server-side binary verification
+    // This also triggers server-side binary verification [SHA256 of this compiled binary]
     int authError = 0;
     AuthPayload auth = ReadAuthFromPipe(&authError);
     if (!auth.valid) {
