@@ -338,9 +338,71 @@ m_hJob = CreateJobObjectW(NULL, NULL);
     return true;
 }
 
-``` 
+```
 
 And clean up associated code. 
+
+## Helper file - Messenger.cpp
+
+This tiny executable file must be spawned with UAC elevation. 
+Mostly needed if you want an INK - https://github.com/vadimdemedes/ink 
+app such as gemini cli or claude code...
+you will need their pid and this to send message.
+
+Such apps, while will get the message from emulator,
+but won't process return key to send.
+
+
+**Implementation pseudocode:**
+
+```
+pseudocode: messenger_wrapper.py
+
+import os, time, hmac, hashlib, subprocess, secrets
+from pathlib import Path
+
+class MessengerAuth:
+    def __init__(self, target_pid, target_name):
+        self.secret = secrets.token_bytes(32)  # Raw bytes
+        self.target_pid = target_pid
+        self.target_name = target_name
+        self.pipe_name = f"\\\\.\\pipe\\InjectorAuth_{os.getpid()}"
+        
+    def start_pipe_server(self):
+        # Create named pipe, serve on connect:
+        # Send: f"{self.secret.hex()}\n{self.target_pid}\n{self.target_name}"
+        # Verify caller binary hash before responding (optional)
+        pass
+    
+    def sign(self, command):
+        ts = str(int(time.time()))
+        msg = f"{self.target_pid}|{command}|{ts}"
+        sig = hmac.new(self.secret, msg.encode(), hashlib.sha256).hexdigest()
+        return ts, sig
+    
+    def send(self, command):
+        ts, sig = self.sign(command)
+        result = subprocess.run([
+            "messenger.exe",
+            str(self.target_pid),
+            command,
+            ts,
+            sig
+        ])
+        return result.returncode
+
+# Usage
+auth = MessengerAuth(pid=12345, target_name="claude.exe")
+auth.start_pipe_server()  # In background thread
+
+auth.send("hello world")  # Text + Enter
+auth.send("--tab")        # Special key
+auth.send("--escape")
+
+```
+
+---
+
 
 ### License
 
