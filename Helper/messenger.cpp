@@ -19,6 +19,14 @@ Authentication Flow:
 4. Verifies target PID matches registered target
 5. Only then proceeds with injection
  *
+Security Implementation:
+1. HMAC SHA256 - Using windows bcrypt
+2. 10 second replay protection
+3. Target binding with PID+process name verification
+4. Const time compare to prevent timing attac
+5. Secret from pipe not hardcoded. I recommend implementing per session refresh.
+ *
+ *
 Usage:
   messenger.exe <PID> <command> <timestamp> <sig>  (text injection)
  :: Sends enter automatically with a combo approach that works. 
