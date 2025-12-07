@@ -26,6 +26,7 @@ Security Implementation:
 4. Const time compare to prevent timing attac
 5. Secret from pipe not hardcoded. I recommend implementing per session refresh.
  *
+Build: g++ -o ink_injector.exe ink_injector_auth.cpp -static -s -mwindows -lbcrypt
  *
 Usage:
   messenger.exe <PID> <command> <timestamp> <sig>  (text injection)
