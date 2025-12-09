@@ -16,7 +16,7 @@ A headless terminal emulator that keeps `isatty()` returning `true` for spawned 
 - No visible console window needed - output is captured programmatically
 - ANSI escape codes pass through correctly
 - v2.5.0 - Now supports tray icon using --sys-tray argument. If you need a console for a long running process to see logs, or outputs just show from system tray and hide it back.
-- v2.5.0 - - Right-click tray icon to show/hide console on demand with full color output and VT sequences output support.
+- v2.5.0 - Right-click tray icon to show/hide console on demand with full color output and VT sequences output support.
 
 ## Why This Matters
 
@@ -38,7 +38,7 @@ You can now simple use headless-tty to spawn cmd, or powershell etc, then call w
 - `headless-tty.exe -- python main.py` : run a python file main.py without console, I mean you could use pythonw, but you still have to call it from somewhere.
 - `headless-tty.exe -- cmd /c "ipconfig -all >%temp%\ipconfig.txt && notepad %temp%\ipconfig.txt"` : Prints ipconfig to a file in temporary folder, then opens it in notepad, without ever showing console.
 - `headless-tty.exe -- powershell ".\myscript.ps1"` : run a powershell script without console.
-- `headless-tty.exe --sys-tray -- powershell .\myscript.ps1` : run a powershell script but now with tray icon if you want, see oututs, or hide back to system tray.
+- `headless-tty.exe --sys-tray -- python -u main.py` : Run a long running python script but now with tray icon if you want to see outputs later, hide it away when not in use.
 
 These are basic example of a non cpp dev using this.
 
@@ -543,6 +543,7 @@ If you want a waiver, please get in touch - https://github.com/revoconner/Headle
 
 
 Read LICENSE for details, the LICENSE will take precedence over the above given summary in a court of Law, if a conflict presents itself.
+
 
 
 
