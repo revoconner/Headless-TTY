@@ -249,8 +249,6 @@ void show_tray_menu(HWND hwnd) {
         } else {
             AppendMenuW(hMenu, MF_STRING, ID_TRAY_SHOW_CONSOLE, L"Show Console");
         }
-        AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
-        AppendMenuW(hMenu, MF_STRING, ID_TRAY_EXIT, L"Exit");
 
         // Required for menu to work properly
         SetForegroundWindow(hwnd);
@@ -285,18 +283,12 @@ LRESULT CALLBACK TrayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
             break;
 
         case WM_COMMAND:
-            switch (LOWORD(wParam)) {
-                case ID_TRAY_SHOW_CONSOLE:
-                    if (g_console_visible.load()) {
-                        hide_console();
-                    } else {
-                        show_console();
-                    }
-                    break;
-                case ID_TRAY_EXIT:
-                    g_shutdown_requested.store(true);
-                    DestroyWindow(hwnd);
-                    break;
+            if (LOWORD(wParam) == ID_TRAY_SHOW_CONSOLE) {
+                if (g_console_visible.load()) {
+                    hide_console();
+                } else {
+                    show_console();
+                }
             }
             break;
 
@@ -356,61 +348,73 @@ void remove_tray() {
     }
 }
 
-// Console input forwarder for tray mode using non-blocking polling
+// Console input forwarder for tray mode using raw input events
 void tray_console_input_forwarder(headless_tty::HeadlessTTY& tty) {
-    char buffer[headless_tty::INPUT_BUFFER_SIZE];
+    std::string lineBuffer;
 
     while (true) {
-        // Check exit conditions at the top of each iteration
         if (g_shutdown_requested.load() || !tty.is_running()) {
             break;
         }
 
-        // Skip if console not visible or handle invalid
         HANDLE hIn = g_hConsoleIn;
+        HANDLE hOut = g_hConsoleOut;
         if (!g_console_visible.load() || hIn == INVALID_HANDLE_VALUE) {
             Sleep(50);
             continue;
         }
 
-        // Wait for input with short timeout
         DWORD waitResult = WaitForSingleObject(hIn, 50);
 
-        // Check exit conditions again after wait
         if (g_shutdown_requested.load() || !tty.is_running()) {
             break;
         }
 
-        if (waitResult == WAIT_OBJECT_0 && g_console_visible.load()) {
-            // Console handle is signalled - check if there's actual input
-            DWORD numEvents = 0;
-            if (!GetNumberOfConsoleInputEvents(hIn, &numEvents) || numEvents == 0) {
-                continue;
+        if (waitResult != WAIT_OBJECT_0 || !g_console_visible.load()) {
+            continue;
+        }
+
+        // Read input events
+        INPUT_RECORD record;
+        DWORD eventsRead = 0;
+        if (!ReadConsoleInputA(hIn, &record, 1, &eventsRead) || eventsRead == 0) {
+            continue;
+        }
+
+        // Only process key down events
+        if (record.EventType != KEY_EVENT || !record.Event.KeyEvent.bKeyDown) {
+            continue;
+        }
+
+        char ch = record.Event.KeyEvent.uChar.AsciiChar;
+        WORD vk = record.Event.KeyEvent.wVirtualKeyCode;
+
+        if (vk == VK_RETURN) {
+            // Echo newline and send line to PTY
+            if (hOut != INVALID_HANDLE_VALUE) {
+                DWORD written;
+                WriteConsoleA(hOut, "\r\n", 2, &written, NULL);
             }
-
-            // Peek to see if there's a key event with Enter (line complete)
-            INPUT_RECORD records[128];
-            DWORD eventsRead = 0;
-            if (PeekConsoleInputA(hIn, records, 128, &eventsRead)) {
-                bool hasEnter = false;
-                for (DWORD i = 0; i < eventsRead; i++) {
-                    if (records[i].EventType == KEY_EVENT &&
-                        records[i].Event.KeyEvent.bKeyDown &&
-                        records[i].Event.KeyEvent.wVirtualKeyCode == VK_RETURN) {
-                        hasEnter = true;
-                        break;
-                    }
+            lineBuffer += "\r\n";
+            if (tty.is_running()) {
+                tty.write(reinterpret_cast<const uint8_t*>(lineBuffer.c_str()), lineBuffer.size());
+            }
+            lineBuffer.clear();
+        } else if (vk == VK_BACK) {
+            // Handle backspace
+            if (!lineBuffer.empty()) {
+                lineBuffer.pop_back();
+                if (hOut != INVALID_HANDLE_VALUE) {
+                    DWORD written;
+                    WriteConsoleA(hOut, "\b \b", 3, &written, NULL);
                 }
-
-                // Only call ReadConsoleA if Enter was pressed (line is complete)
-                if (hasEnter && g_console_visible.load()) {
-                    DWORD charsRead = 0;
-                    if (ReadConsoleA(hIn, buffer, sizeof(buffer) - 1, &charsRead, NULL)) {
-                        if (charsRead > 0 && g_console_visible.load() && tty.is_running()) {
-                            tty.write(reinterpret_cast<uint8_t*>(buffer), charsRead);
-                        }
-                    }
-                }
+            }
+        } else if (ch >= 32 && ch < 127) {
+            // Printable ASCII - echo and buffer
+            lineBuffer += ch;
+            if (hOut != INVALID_HANDLE_VALUE) {
+                DWORD written;
+                WriteConsoleA(hOut, &ch, 1, &written, NULL);
             }
         }
     }
