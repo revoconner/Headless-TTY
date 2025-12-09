@@ -18,9 +18,22 @@ Usage: headless-tty [options] [command] [args...]
 #include <csignal>
 #include <io.h>
 #include <fcntl.h>
+#include <shellapi.h>
 
+// Tray icon message and menu IDs
+#define WM_TRAYICON (WM_USER + 1)
+#define ID_TRAY_SHOW_CONSOLE 1001
+#define ID_TRAY_EXIT 1002
 
 static std::atomic<bool> g_shutdown_requested{ false };
+
+// Tray mode globals
+static HWND g_tray_hwnd = nullptr;
+static NOTIFYICONDATAW g_nid = {};
+static std::atomic<bool> g_console_visible{ false };
+static HANDLE g_hConsoleOut = INVALID_HANDLE_VALUE;
+static HANDLE g_hConsoleIn = INVALID_HANDLE_VALUE;
+static headless_tty::HeadlessTTY* g_tty = nullptr;
 
 void signal_handler(int signum) {
     (void)signum;
@@ -34,6 +47,7 @@ void print_usage(const char* program_name) {
     std::cerr << "Options:\n";
     std::cerr << "  --width <cols>     Terminal width (default: 120)\n";
     std::cerr << "  --height <rows>    Terminal height (default: 40)\n";
+    std::cerr << "  --sys-tray         Run with system tray icon (right-click for menu)\n";
     std::cerr << "  --help, -h         Show this help message\n";
     std::cerr << "\n";
     std::cerr << "If no command is specified, notepad.exe is used.\n";
@@ -42,6 +56,7 @@ void print_usage(const char* program_name) {
     std::cerr << "  " << program_name << " app_name\n";
     std::cerr << "  " << program_name << " --width 80 --height 24 pythonw\n";
     std::cerr << "  " << program_name << " cmd /c dir\n";
+    std::cerr << "  " << program_name << " --sys-tray -- python -u main.py\n";
 }
 
 // Convert narrow string to wide string
@@ -64,6 +79,7 @@ struct Args {
     std::wstring args;
     bool help = false;
     bool error = false;
+    bool sys_tray = false;
     std::string error_msg;
 };
 
@@ -93,6 +109,9 @@ Args parse_args(int argc, char* argv[]) {
                 return args;
             }
             args.height = static_cast<uint16_t>(std::stoi(argv[++i]));
+        }
+        else if (arg == "--sys-tray") {
+            args.sys_tray = true;
         }
         else if (arg == "--") {
             // Everything after "--" is the command and its arguments, important for other processes to pass its own arguments
@@ -143,7 +162,7 @@ void stdin_forwarder(headless_tty::HeadlessTTY& tty) {
         HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
         DWORD available = 0;
 
-        
+
         INPUT_RECORD inputRecords[128];
         DWORD eventsRead = 0;
 
@@ -171,6 +190,274 @@ void stdin_forwarder(headless_tty::HeadlessTTY& tty) {
         }
     }
 }
+
+
+// ============================================================================
+// System Tray Mode Functions
+// ============================================================================
+
+// Console control handler - called when user closes console window
+BOOL WINAPI ConsoleCtrlHandler(DWORD ctrlType) {
+    if (ctrlType == CTRL_CLOSE_EVENT || ctrlType == CTRL_C_EVENT || ctrlType == CTRL_BREAK_EVENT) {
+        g_shutdown_requested.store(true);
+        if (g_tray_hwnd) {
+            PostMessage(g_tray_hwnd, WM_CLOSE, 0, 0);
+        }
+        return TRUE;
+    }
+    return FALSE;
+}
+
+// Show console window (allocate if needed)
+void show_console() {
+    if (g_console_visible.load()) return;
+
+    if (!AllocConsole()) return;
+
+    g_hConsoleOut = CreateFileW(L"CONOUT$", GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+    g_hConsoleIn = CreateFileW(L"CONIN$", GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+
+    if (g_hConsoleOut != INVALID_HANDLE_VALUE) {
+        // Enable VT processing for proper terminal rendering
+        DWORD mode = 0;
+        GetConsoleMode(g_hConsoleOut, &mode);
+        SetConsoleMode(g_hConsoleOut, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+    }
+
+    SetConsoleTitleW(L"headless-tty");
+    g_console_visible.store(true);
+
+    // Register handler so closing console window exits app
+    SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
+}
+
+// Show tray context menu
+void show_tray_menu(HWND hwnd) {
+    POINT pt;
+    GetCursorPos(&pt);
+
+    HMENU hMenu = CreatePopupMenu();
+    if (hMenu) {
+        if (g_console_visible.load()) {
+            AppendMenuW(hMenu, MF_STRING, ID_TRAY_SHOW_CONSOLE, L"Hide Console");
+        } else {
+            AppendMenuW(hMenu, MF_STRING, ID_TRAY_SHOW_CONSOLE, L"Show Console");
+        }
+        AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
+        AppendMenuW(hMenu, MF_STRING, ID_TRAY_EXIT, L"Exit");
+
+        // Required for menu to work properly
+        SetForegroundWindow(hwnd);
+        TrackPopupMenu(hMenu, TPM_BOTTOMALIGN | TPM_LEFTALIGN, pt.x, pt.y, 0, hwnd, NULL);
+        PostMessage(hwnd, WM_NULL, 0, 0);
+
+        DestroyMenu(hMenu);
+    }
+}
+
+// Hide console window
+void hide_console() {
+    if (!g_console_visible.load()) return;
+
+    g_console_visible.store(false);
+    SetConsoleCtrlHandler(ConsoleCtrlHandler, FALSE);
+
+    if (g_hConsoleOut != INVALID_HANDLE_VALUE) {
+        CloseHandle(g_hConsoleOut);
+        g_hConsoleOut = INVALID_HANDLE_VALUE;
+    }
+    if (g_hConsoleIn != INVALID_HANDLE_VALUE) {
+        CloseHandle(g_hConsoleIn);
+        g_hConsoleIn = INVALID_HANDLE_VALUE;
+    }
+
+    FreeConsole();
+}
+
+// Tray window procedure
+LRESULT CALLBACK TrayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+        case WM_TRAYICON:
+            if (lParam == WM_RBUTTONUP) {
+                show_tray_menu(hwnd);
+            }
+            break;
+
+        case WM_COMMAND:
+            switch (LOWORD(wParam)) {
+                case ID_TRAY_SHOW_CONSOLE:
+                    if (g_console_visible.load()) {
+                        hide_console();
+                    } else {
+                        show_console();
+                    }
+                    break;
+                case ID_TRAY_EXIT:
+                    g_shutdown_requested.store(true);
+                    DestroyWindow(hwnd);
+                    break;
+            }
+            break;
+
+        case WM_DESTROY:
+            PostQuitMessage(0);
+            break;
+
+        default:
+            return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+    return 0;
+}
+
+// Setup system tray icon
+bool setup_tray(HINSTANCE hInstance) {
+    // Register window class
+    WNDCLASSEXW wc = {};
+    wc.cbSize = sizeof(WNDCLASSEXW);
+    wc.lpfnWndProc = TrayWndProc;
+    wc.hInstance = hInstance;
+    wc.lpszClassName = L"HeadlessTTYTrayClass";
+
+    if (!RegisterClassExW(&wc)) {
+        return false;
+    }
+
+    // Create hidden message-only window
+    g_tray_hwnd = CreateWindowExW(
+        0, L"HeadlessTTYTrayClass", L"HeadlessTTY",
+        0, 0, 0, 0, 0,
+        HWND_MESSAGE, NULL, hInstance, NULL
+    );
+
+    if (!g_tray_hwnd) {
+        return false;
+    }
+
+    // Setup tray icon
+    ZeroMemory(&g_nid, sizeof(g_nid));
+    g_nid.cbSize = sizeof(NOTIFYICONDATAW);
+    g_nid.hWnd = g_tray_hwnd;
+    g_nid.uID = 1;
+    g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    g_nid.uCallbackMessage = WM_TRAYICON;
+    g_nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+    wcscpy_s(g_nid.szTip, L"headless-tty");
+
+    return Shell_NotifyIconW(NIM_ADD, &g_nid) == TRUE;
+}
+
+// Remove tray icon
+void remove_tray() {
+    Shell_NotifyIconW(NIM_DELETE, &g_nid);
+    if (g_tray_hwnd) {
+        DestroyWindow(g_tray_hwnd);
+        g_tray_hwnd = nullptr;
+    }
+}
+
+// Console input forwarder for tray mode
+void tray_console_input_forwarder(headless_tty::HeadlessTTY& tty) {
+    char buffer[headless_tty::INPUT_BUFFER_SIZE];
+
+    while (!g_shutdown_requested.load() && tty.is_running()) {
+        if (!g_console_visible.load() || g_hConsoleIn == INVALID_HANDLE_VALUE) {
+            Sleep(50);
+            continue;
+        }
+
+        INPUT_RECORD inputRecords[128];
+        DWORD eventsRead = 0;
+
+        if (PeekConsoleInput(g_hConsoleIn, inputRecords, 128, &eventsRead) && eventsRead > 0) {
+            DWORD charsRead = 0;
+            if (ReadConsoleA(g_hConsoleIn, buffer, sizeof(buffer) - 1, &charsRead, NULL)) {
+                if (charsRead > 0) {
+                    tty.write(reinterpret_cast<uint8_t*>(buffer), charsRead);
+                }
+            }
+        } else {
+            Sleep(10);
+        }
+    }
+}
+
+// Run in system tray mode
+int run_tray_mode(const Args& args) {
+    HINSTANCE hInstance = GetModuleHandle(NULL);
+
+    if (!setup_tray(hInstance)) {
+        return 1;
+    }
+
+    // Create and start HeadlessTTY
+    headless_tty::HeadlessTTY tty;
+    g_tty = &tty;
+
+    headless_tty::Config config;
+    config.size.cols = args.width;
+    config.size.rows = args.height;
+    config.command = args.command;
+    config.args = args.args;
+
+    // Set output callback - writes to console when visible
+    tty.set_output_callback([](const uint8_t* data, size_t length) {
+        if (g_console_visible.load() && g_hConsoleOut != INVALID_HANDLE_VALUE) {
+            DWORD written;
+            WriteFile(g_hConsoleOut, data, static_cast<DWORD>(length), &written, NULL);
+        }
+    });
+
+    if (!tty.start(config)) {
+        remove_tray();
+        return 1;
+    }
+
+    // Start console input forwarder thread
+    std::thread input_thread(tray_console_input_forwarder, std::ref(tty));
+
+    // Message loop with periodic check for process exit
+    MSG msg;
+    while (!g_shutdown_requested.load()) {
+        // Wait for messages or timeout (100ms) to check process status
+        DWORD result = MsgWaitForMultipleObjects(0, NULL, FALSE, 100, QS_ALLINPUT);
+
+        if (result == WAIT_OBJECT_0) {
+            // Process all pending messages
+            while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+                if (msg.message == WM_QUIT) {
+                    g_shutdown_requested.store(true);
+                    break;
+                }
+                TranslateMessage(&msg);
+                DispatchMessage(&msg);
+            }
+        }
+
+        // Check if child process exited
+        if (!tty.is_running()) {
+            g_shutdown_requested.store(true);
+        }
+    }
+
+    // Cleanup
+    g_shutdown_requested.store(true);
+    tty.stop();
+
+    if (input_thread.joinable()) {
+        input_thread.join();
+    }
+
+    if (g_console_visible.load()) {
+        hide_console();
+    }
+
+    remove_tray();
+    g_tty = nullptr;
+
+    int exitCode = tty.wait(0);
+    return exitCode >= 0 ? exitCode : 0;
+}
+
 
 int main(int argc, char* argv[]) {
 
@@ -209,6 +496,10 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // System tray mode - separate execution path
+    if (args.sys_tray) {
+        return run_tray_mode(args);
+    }
 
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
