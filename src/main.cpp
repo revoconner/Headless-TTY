@@ -214,15 +214,22 @@ void show_console() {
 
     if (!AllocConsole()) return;
 
-    g_hConsoleOut = CreateFileW(L"CONOUT$", GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
-    g_hConsoleIn = CreateFileW(L"CONIN$", GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+    // Open console handles explicitly with sharing
+    g_hConsoleOut = CreateFileW(L"CONOUT$", GENERIC_WRITE, FILE_SHARE_WRITE,
+                                 NULL, OPEN_EXISTING, 0, NULL);
+    g_hConsoleIn = CreateFileW(L"CONIN$", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ,
+                                NULL, OPEN_EXISTING, 0, NULL);
 
     if (g_hConsoleOut != INVALID_HANDLE_VALUE) {
         // Enable VT processing for proper terminal rendering
-        DWORD mode = 0;
-        GetConsoleMode(g_hConsoleOut, &mode);
-        SetConsoleMode(g_hConsoleOut, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+        DWORD outMode = 0;
+        if (GetConsoleMode(g_hConsoleOut, &outMode)) {
+            SetConsoleMode(g_hConsoleOut, outMode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+        }
     }
+
+    // Keep default input mode (line-buffered with echo) for now
+    // This means user types a line, presses Enter, then it's sent
 
     SetConsoleTitleW(L"headless-tty");
     g_console_visible.store(true);
@@ -262,6 +269,7 @@ void hide_console() {
     g_console_visible.store(false);
     SetConsoleCtrlHandler(ConsoleCtrlHandler, FALSE);
 
+    // Close handles we created with CreateFile
     if (g_hConsoleOut != INVALID_HANDLE_VALUE) {
         CloseHandle(g_hConsoleOut);
         g_hConsoleOut = INVALID_HANDLE_VALUE;
@@ -355,28 +363,23 @@ void remove_tray() {
     }
 }
 
-// Console input forwarder for tray mode
+// Console input forwarder for tray mode (line-buffered)
 void tray_console_input_forwarder(headless_tty::HeadlessTTY& tty) {
     char buffer[headless_tty::INPUT_BUFFER_SIZE];
 
     while (!g_shutdown_requested.load() && tty.is_running()) {
+        // Skip if console not visible
         if (!g_console_visible.load() || g_hConsoleIn == INVALID_HANDLE_VALUE) {
-            Sleep(50);
+            Sleep(100);
             continue;
         }
 
-        INPUT_RECORD inputRecords[128];
-        DWORD eventsRead = 0;
-
-        if (PeekConsoleInput(g_hConsoleIn, inputRecords, 128, &eventsRead) && eventsRead > 0) {
-            DWORD charsRead = 0;
-            if (ReadConsoleA(g_hConsoleIn, buffer, sizeof(buffer) - 1, &charsRead, NULL)) {
-                if (charsRead > 0) {
-                    tty.write(reinterpret_cast<uint8_t*>(buffer), charsRead);
-                }
+        // Read input (blocks until Enter is pressed in line mode)
+        DWORD charsRead = 0;
+        if (ReadConsoleA(g_hConsoleIn, buffer, sizeof(buffer) - 1, &charsRead, NULL)) {
+            if (charsRead > 0) {
+                tty.write(reinterpret_cast<uint8_t*>(buffer), charsRead);
             }
-        } else {
-            Sleep(10);
         }
     }
 }
@@ -403,7 +406,8 @@ int run_tray_mode(const Args& args) {
     tty.set_output_callback([](const uint8_t* data, size_t length) {
         if (g_console_visible.load() && g_hConsoleOut != INVALID_HANDLE_VALUE) {
             DWORD written;
-            WriteFile(g_hConsoleOut, data, static_cast<DWORD>(length), &written, NULL);
+            // Use WriteConsoleA for proper console output
+            WriteConsoleA(g_hConsoleOut, data, static_cast<DWORD>(length), &written, NULL);
         }
     });
 

@@ -99,6 +99,7 @@ cmd_args = r"ipconfig -all >%temp%\ipconfig.txt && notepad %temp%\ipconfig.txt" 
 
 cmd = [
     str(headless_tty_exe),
+    "--sys-tray",
     "--",
     "cmd",
     "/c",
