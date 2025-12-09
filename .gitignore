@@ -3,3 +3,9 @@
 *.lnk
 test*
 others/*
+*.ini
+
+# image files
+*.png
+*.jpg
+*.psd

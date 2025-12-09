@@ -2,12 +2,21 @@
 
 A headless terminal emulator that keeps `isatty()` returning `true` for spawned processes.
 
+<p align="center">
+  <img width="500" height="auto" alt="icon_github_page" src="https://github.com/user-attachments/assets/5c4e281c-0dc5-4f99-9f69-3e7bfbc18234" />
+</p>
+
+
+
+
 ## What It Does
 
 - Creates a real pseudo-terminal (PTY) via Windows ConPTY
 - Spawned processes see `isatty(stdin) = true`, `isatty(stdout) = true`
 - No visible console window needed - output is captured programmatically
 - ANSI escape codes pass through correctly
+- v2.5.0 - Now supports tray icon using --sys-tray argument. If you need a console for a long running process to see logs, or outputs just show from system tray and hide it back.
+- v2.5.0 - Right-click tray icon to show/hide console on demand with full color output and VT sequences output support.
 
 ## Why This Matters
 
@@ -26,9 +35,10 @@ When you want to start a CLI app headless at Windows starts using task scheduler
 
 You can now simple use headless-tty to spawn cmd, or powershell etc, then call whatver you want from there. A few examples: 
 
-- `headless-tty.exe -- cmd /c "pythonw main.py"` : run a python file main.py without console. Pythonw doesn't use console, and headless-tty calls pythonw without a visible console.
+- `headless-tty.exe -- python main.py` : run a python file main.py without console, I mean you could use pythonw, but you still have to call it from somewhere.
 - `headless-tty.exe -- cmd /c "ipconfig -all >%temp%\ipconfig.txt && notepad %temp%\ipconfig.txt"` : Prints ipconfig to a file in temporary folder, then opens it in notepad, without ever showing console.
-- `headless-tty.exe -- powershell ".\myscript.ps1"` : run a powershell script without console. 
+- `headless-tty.exe -- powershell ".\myscript.ps1"` : run a powershell script without console.
+- `headless-tty.exe --sys-tray -- python -u main.py` : Run a long running python script but now with tray icon if you want to see outputs later, hide it away when not in use.
 
 These are basic example of a non cpp dev using this.
 
@@ -55,12 +65,29 @@ headless-tty.exe
 # Run a specific command
 headless-tty.exe claude
 
-# With custom terminal size
-headless-tty.exe --width 80 --height 24 python
-
 # Pass arguments to command
 headless-tty.exe cmd /c dir
 ```
+
+### System Tray Mode
+
+Run processes in the background with a system tray icon. Right-click the tray icon to show/hide a console window on demand.
+
+```batch
+# Run with system tray icon
+headless-tty.exe --sys-tray -- python -u main.py
+
+# Run a long-running process in tray
+headless-tty.exe --sys-tray -- node server.js
+```
+
+**How it works:**
+- The process runs completely hidden
+- A tray icon appears in your system tray (bottom-right)
+- Right-click the icon to "Show Console" or "Hide Console"
+- The console lets you see output and type commands
+- Closing the console window (X button) exits everything
+- If the child process exits, the tray icon disappears automatically
 
 ### Use with pythonw (example use case, not limited to) to launch claude code cli in headless mode but keep session alive
 
@@ -114,11 +141,10 @@ int main() {
 
 ### Options
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--width <cols>` | 120 | Terminal width in columns |
-| `--height <rows>` | 40 | Terminal height in rows |
-| `--help`, `-h` | | Show help message |
+| Option | Description |
+|--------|-------------|
+| `--sys-tray` | Run with system tray icon (right-click for menu) |
+| `--help`, `-h` | Show help message |
 
 
 
@@ -473,6 +499,15 @@ auth.send("--escape")
     - Killing headless-tty kills the child process (Job Object)
     - Closing/killing the child process causes headless-tty to exit cleanly (Monitor Thread)
 - Comes with an example showcase file written in python `usage_example.py` to help showcase the Software's potential.
+
+#### 2.5.0
+**System Tray Mode**
+- Added `--sys-tray` flag for running processes with a system tray icon
+- Right-click tray icon to show/hide console on demand
+- Console supports full color output and VT sequences
+- Closing console window exits the application
+- Child process exit automatically removes tray icon
+- Help message now displays when running with `-h` or `--help` from command line
     
 
 ---
@@ -508,6 +543,8 @@ If you want a waiver, please get in touch - https://github.com/revoconner/Headle
 
 
 Read LICENSE for details, the LICENSE will take precedence over the above given summary in a court of Law, if a conflict presents itself.
+
+
 
 
 
