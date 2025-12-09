@@ -19,6 +19,8 @@ Usage: headless-tty [options] [command] [args...]
 #include <io.h>
 #include <fcntl.h>
 #include <shellapi.h>
+#define IDI_ICON1 101
+
 
 // Tray icon message and menu IDs
 #define WM_TRAYICON (WM_USER + 1)
@@ -327,7 +329,7 @@ bool setup_tray(HINSTANCE hInstance) {
     g_nid.uID = 1;
     g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     g_nid.uCallbackMessage = WM_TRAYICON;
-    g_nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+    g_nid.hIcon = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICON1));
     wcscpy_s(g_nid.szTip, L"headless-tty");
 
     return Shell_NotifyIconW(NIM_ADD, &g_nid) == TRUE;
