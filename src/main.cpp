@@ -213,11 +213,9 @@ void show_console() {
 
     if (!AllocConsole()) return;
 
-    // Open console handles explicitly with sharing
-    g_hConsoleOut = CreateFileW(L"CONOUT$", GENERIC_WRITE, FILE_SHARE_WRITE,
-                                 NULL, OPEN_EXISTING, 0, NULL);
-    g_hConsoleIn = CreateFileW(L"CONIN$", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ,
-                                NULL, OPEN_EXISTING, 0, NULL);
+    // Get standard handles after AllocConsole
+    g_hConsoleOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    g_hConsoleIn = GetStdHandle(STD_INPUT_HANDLE);
 
     if (g_hConsoleOut != INVALID_HANDLE_VALUE) {
         // Enable VT processing for proper terminal rendering
@@ -227,8 +225,10 @@ void show_console() {
         }
     }
 
-    // Keep default input mode (line-buffered with echo) for now
-    // This means user types a line, presses Enter, then it's sent
+    if (g_hConsoleIn != INVALID_HANDLE_VALUE) {
+        // Enable line input with echo
+        SetConsoleMode(g_hConsoleIn, ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT);
+    }
 
     SetConsoleTitleW(L"headless-tty");
     g_console_visible.store(true);
@@ -268,15 +268,9 @@ void hide_console() {
     g_console_visible.store(false);
     SetConsoleCtrlHandler(ConsoleCtrlHandler, FALSE);
 
-    // Close handles we created with CreateFile
-    if (g_hConsoleOut != INVALID_HANDLE_VALUE) {
-        CloseHandle(g_hConsoleOut);
-        g_hConsoleOut = INVALID_HANDLE_VALUE;
-    }
-    if (g_hConsoleIn != INVALID_HANDLE_VALUE) {
-        CloseHandle(g_hConsoleIn);
-        g_hConsoleIn = INVALID_HANDLE_VALUE;
-    }
+    // Invalidate handles (don't close - they're from GetStdHandle)
+    g_hConsoleOut = INVALID_HANDLE_VALUE;
+    g_hConsoleIn = INVALID_HANDLE_VALUE;
 
     FreeConsole();
 }
@@ -362,22 +356,61 @@ void remove_tray() {
     }
 }
 
-// Console input forwarder for tray mode (line-buffered)
+// Console input forwarder for tray mode using non-blocking polling
 void tray_console_input_forwarder(headless_tty::HeadlessTTY& tty) {
     char buffer[headless_tty::INPUT_BUFFER_SIZE];
 
-    while (!g_shutdown_requested.load() && tty.is_running()) {
-        // Skip if console not visible
-        if (!g_console_visible.load() || g_hConsoleIn == INVALID_HANDLE_VALUE) {
-            Sleep(100);
+    while (true) {
+        // Check exit conditions at the top of each iteration
+        if (g_shutdown_requested.load() || !tty.is_running()) {
+            break;
+        }
+
+        // Skip if console not visible or handle invalid
+        HANDLE hIn = g_hConsoleIn;
+        if (!g_console_visible.load() || hIn == INVALID_HANDLE_VALUE) {
+            Sleep(50);
             continue;
         }
 
-        // Read input (blocks until Enter is pressed in line mode)
-        DWORD charsRead = 0;
-        if (ReadConsoleA(g_hConsoleIn, buffer, sizeof(buffer) - 1, &charsRead, NULL)) {
-            if (charsRead > 0) {
-                tty.write(reinterpret_cast<uint8_t*>(buffer), charsRead);
+        // Wait for input with short timeout
+        DWORD waitResult = WaitForSingleObject(hIn, 50);
+
+        // Check exit conditions again after wait
+        if (g_shutdown_requested.load() || !tty.is_running()) {
+            break;
+        }
+
+        if (waitResult == WAIT_OBJECT_0 && g_console_visible.load()) {
+            // Console handle is signalled - check if there's actual input
+            DWORD numEvents = 0;
+            if (!GetNumberOfConsoleInputEvents(hIn, &numEvents) || numEvents == 0) {
+                continue;
+            }
+
+            // Peek to see if there's a key event with Enter (line complete)
+            INPUT_RECORD records[128];
+            DWORD eventsRead = 0;
+            if (PeekConsoleInputA(hIn, records, 128, &eventsRead)) {
+                bool hasEnter = false;
+                for (DWORD i = 0; i < eventsRead; i++) {
+                    if (records[i].EventType == KEY_EVENT &&
+                        records[i].Event.KeyEvent.bKeyDown &&
+                        records[i].Event.KeyEvent.wVirtualKeyCode == VK_RETURN) {
+                        hasEnter = true;
+                        break;
+                    }
+                }
+
+                // Only call ReadConsoleA if Enter was pressed (line is complete)
+                if (hasEnter && g_console_visible.load()) {
+                    DWORD charsRead = 0;
+                    if (ReadConsoleA(hIn, buffer, sizeof(buffer) - 1, &charsRead, NULL)) {
+                        if (charsRead > 0 && g_console_visible.load() && tty.is_running()) {
+                            tty.write(reinterpret_cast<uint8_t*>(buffer), charsRead);
+                        }
+                    }
+                }
             }
         }
     }
@@ -444,6 +477,7 @@ int run_tray_mode(const Args& args) {
     g_shutdown_requested.store(true);
     tty.stop();
 
+    // Input thread will exit on next loop iteration (100ms max)
     if (input_thread.joinable()) {
         input_thread.join();
     }
