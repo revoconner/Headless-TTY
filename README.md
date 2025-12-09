@@ -55,12 +55,29 @@ headless-tty.exe
 # Run a specific command
 headless-tty.exe claude
 
-# With custom terminal size
-headless-tty.exe --width 80 --height 24 python
-
 # Pass arguments to command
 headless-tty.exe cmd /c dir
 ```
+
+### System Tray Mode
+
+Run processes in the background with a system tray icon. Right-click the tray icon to show/hide a console window on demand.
+
+```batch
+# Run with system tray icon
+headless-tty.exe --sys-tray -- python -u main.py
+
+# Run a long-running process in tray
+headless-tty.exe --sys-tray -- node server.js
+```
+
+**How it works:**
+- The process runs completely hidden
+- A tray icon appears in your system tray (bottom-right)
+- Right-click the icon to "Show Console" or "Hide Console"
+- The console lets you see output and type commands
+- Closing the console window (X button) exits everything
+- If the child process exits, the tray icon disappears automatically
 
 ### Use with pythonw (example use case, not limited to) to launch claude code cli in headless mode but keep session alive
 
@@ -114,11 +131,10 @@ int main() {
 
 ### Options
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--width <cols>` | 120 | Terminal width in columns |
-| `--height <rows>` | 40 | Terminal height in rows |
-| `--help`, `-h` | | Show help message |
+| Option | Description |
+|--------|-------------|
+| `--sys-tray` | Run with system tray icon (right-click for menu) |
+| `--help`, `-h` | Show help message |
 
 
 
@@ -473,6 +489,15 @@ auth.send("--escape")
     - Killing headless-tty kills the child process (Job Object)
     - Closing/killing the child process causes headless-tty to exit cleanly (Monitor Thread)
 - Comes with an example showcase file written in python `usage_example.py` to help showcase the Software's potential.
+
+#### 2.5.0
+**System Tray Mode**
+- Added `--sys-tray` flag for running processes with a system tray icon
+- Right-click tray icon to show/hide console on demand
+- Console supports full color output and VT sequences
+- Closing console window exits the application
+- Child process exit automatically removes tray icon
+- Help message now displays when running with `-h` or `--help` from command line
     
 
 ---

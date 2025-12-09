@@ -23,7 +23,6 @@ Usage: headless-tty [options] [command] [args...]
 // Tray icon message and menu IDs
 #define WM_TRAYICON (WM_USER + 1)
 #define ID_TRAY_SHOW_CONSOLE 1001
-#define ID_TRAY_EXIT 1002
 
 static std::atomic<bool> g_shutdown_requested{ false };
 
@@ -41,19 +40,16 @@ void signal_handler(int signum) {
 
 
 void print_usage(const char* program_name) {
-    std::cerr << "headless-tty v2.0.0 - A headless terminal that keeps isatty() = true\n\n";
+    std::cerr << "headless-tty v2.5.0 - A headless terminal that keeps isatty() = true, works with GUI apps, \n and can stay in system tray\n\n";
     std::cerr << "Usage: " << program_name << " [options] [command] [args...]\n\n";
     std::cerr << "Options:\n";
-    std::cerr << "  --width <cols>     Terminal width (default: 120)\n";
-    std::cerr << "  --height <rows>    Terminal height (default: 40)\n";
     std::cerr << "  --sys-tray         Run with system tray icon (right-click for menu)\n";
     std::cerr << "  --help, -h         Show this help message\n";
     std::cerr << "\n";
-    std::cerr << "If no command is specified, notepad.exe is used.\n";
+    std::cerr << "If no command is specified, notepad.exe opens.\n";
     std::cerr << "\n";
     std::cerr << "Examples:\n";
     std::cerr << "  " << program_name << " app_name\n";
-    std::cerr << "  " << program_name << " --width 80 --height 24 pythonw\n";
     std::cerr << "  " << program_name << " cmd /c dir\n";
     std::cerr << "  " << program_name << " --sys-tray -- python -u main.py\n";
 }
@@ -191,9 +187,7 @@ void stdin_forwarder(headless_tty::HeadlessTTY& tty) {
 }
 
 
-// ============================================================================
 // System Tray Mode Functions
-// ============================================================================
 
 // Console control handler - called when user closes console window
 BOOL WINAPI ConsoleCtrlHandler(DWORD ctrlType) {
@@ -498,8 +492,15 @@ int run_tray_mode(const Args& args) {
 
 
 int main(int argc, char* argv[]) {
-
     Args args = parse_args(argc, argv);
+
+    // Attach to parent console only for help/error output
+    if (args.help || args.error) {
+        if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+            FILE* dummy;
+            freopen_s(&dummy, "CONOUT$", "w", stderr);
+        }
+    }
 
     /* 
     Detect if we have a console attached (for GUI subsystem support)
@@ -525,12 +526,16 @@ int main(int argc, char* argv[]) {
 
     if (args.help) {
         print_usage(argv[0]);
+        std::cerr.flush();
+        FreeConsole();
         return 0;
     }
 
     if (args.error) {
         std::cerr << "Error: " << args.error_msg << "\n\n";
         print_usage(argv[0]);
+        std::cerr.flush();
+        FreeConsole();
         return 1;
     }
 

@@ -101,7 +101,7 @@ cmd_args = r"ping localhost -t"
 
 cmd = [
     str(headless_tty_exe),
-   # "--sys-tray",
+    "--sys-tray",
     "--",
     "claude"
     #str(cmd_args)
