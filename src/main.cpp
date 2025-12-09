@@ -34,6 +34,7 @@ static std::atomic<bool> g_console_visible{ false };
 static HANDLE g_hConsoleOut = INVALID_HANDLE_VALUE;
 static HANDLE g_hConsoleIn = INVALID_HANDLE_VALUE;
 static headless_tty::HeadlessTTY* g_tty = nullptr;
+static std::atomic<int> g_callback_count{ 0 };
 
 void signal_handler(int signum) {
     (void)signum;
@@ -236,6 +237,12 @@ void show_console() {
 
     // Register handler so closing console window exits app
     SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
+
+    // Test write to verify handle works
+    char test[128];
+    sprintf(test, "=== Console Connected (callbacks: %d) ===\r\n", g_callback_count.load());
+    DWORD written;
+    WriteFile(g_hConsoleOut, test, (DWORD)strlen(test), &written, NULL);
 }
 
 // Show tray context menu
@@ -402,19 +409,19 @@ int run_tray_mode(const Args& args) {
     config.command = args.command;
     config.args = args.args;
 
-    // Set output callback - writes to console when visible
-    tty.set_output_callback([](const uint8_t* data, size_t length) {
-        if (g_console_visible.load() && g_hConsoleOut != INVALID_HANDLE_VALUE) {
-            DWORD written;
-            // Use WriteConsoleA for proper console output
-            WriteConsoleA(g_hConsoleOut, data, static_cast<DWORD>(length), &written, NULL);
-        }
-    });
-
     if (!tty.start(config)) {
         remove_tray();
         return 1;
     }
+
+    // Set output callback AFTER start() - m_pty must exist first
+    tty.set_output_callback([](const uint8_t* data, size_t length) {
+        g_callback_count.fetch_add(1);
+        if (g_console_visible.load() && g_hConsoleOut != INVALID_HANDLE_VALUE) {
+            DWORD written;
+            WriteFile(g_hConsoleOut, data, static_cast<DWORD>(length), &written, NULL);
+        }
+    });
 
     // Start console input forwarder thread
     std::thread input_thread(tray_console_input_forwarder, std::ref(tty));
