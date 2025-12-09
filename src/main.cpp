@@ -33,8 +33,6 @@ static NOTIFYICONDATAW g_nid = {};
 static std::atomic<bool> g_console_visible{ false };
 static HANDLE g_hConsoleOut = INVALID_HANDLE_VALUE;
 static HANDLE g_hConsoleIn = INVALID_HANDLE_VALUE;
-static headless_tty::HeadlessTTY* g_tty = nullptr;
-static std::atomic<int> g_callback_count{ 0 };
 
 void signal_handler(int signum) {
     (void)signum;
@@ -237,12 +235,6 @@ void show_console() {
 
     // Register handler so closing console window exits app
     SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
-
-    // Test write to verify handle works
-    char test[128];
-    sprintf(test, "=== Console Connected (callbacks: %d) ===\r\n", g_callback_count.load());
-    DWORD written;
-    WriteFile(g_hConsoleOut, test, (DWORD)strlen(test), &written, NULL);
 }
 
 // Show tray context menu
@@ -401,7 +393,6 @@ int run_tray_mode(const Args& args) {
 
     // Create and start HeadlessTTY
     headless_tty::HeadlessTTY tty;
-    g_tty = &tty;
 
     headless_tty::Config config;
     config.size.cols = args.width;
@@ -416,7 +407,6 @@ int run_tray_mode(const Args& args) {
 
     // Set output callback AFTER start() - m_pty must exist first
     tty.set_output_callback([](const uint8_t* data, size_t length) {
-        g_callback_count.fetch_add(1);
         if (g_console_visible.load() && g_hConsoleOut != INVALID_HANDLE_VALUE) {
             DWORD written;
             WriteFile(g_hConsoleOut, data, static_cast<DWORD>(length), &written, NULL);
@@ -463,7 +453,6 @@ int run_tray_mode(const Args& args) {
     }
 
     remove_tray();
-    g_tty = nullptr;
 
     int exitCode = tty.wait(0);
     return exitCode >= 0 ? exitCode : 0;
