@@ -13,6 +13,6 @@ clang++ -O3 -Wall -Wextra -std=c++17 -fno-exceptions -I include -o headless-tty.
 
 if %ERRORLEVEL%==0 echo Build successful
 
-@REM echo Building helper...
-@REM g++ -std=c++23 -o messenger.exe Helper/messenger.cpp -static -s -mwindows -lbcrypt
-@REM if %ERRORLEVEL%==0 echo Build successful
+echo Building helper...
+g++ -std=c++23 -o messenger.exe Helper/messenger.cpp -static -s -mwindows -lbcrypt
+if %ERRORLEVEL%==0 echo Build successful
