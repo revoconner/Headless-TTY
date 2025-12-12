@@ -9,7 +9,7 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 2.5.0   | [YES] Latest- Till December 10th, 2027 |
+| 2.5.0   | [YES] Latest- Till December 10th, 2026 |
 | 2.0.0  LTS | [YES] LTS - Security updates till December 5th, 2030 |
 | < 2.0.0  | [NO] Not supported, do not use|
 
