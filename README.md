@@ -537,7 +537,7 @@ No, as long as you do not use the Software or Derivative work to generate that i
 </details>
 <br>
 
-If you want a waiver, please get in touch - https://github.com/revoconner/Headless-TTY/discussions/1 
+If you want a waiver, please get in touch - [License waiver](https://github.com/revoconner/Headless-TTY/discussions/5)
 
 
 Read LICENSE for details, the LICENSE will take precedence over the above given summary in a court of Law, if a conflict presents itself.
@@ -553,6 +553,7 @@ Read LICENSE for details, the LICENSE will take precedence over the above given 
 - (INFORMATION/RESEARCH) Some research for the use of conpty and newer api, was done using web search tool with AI.
 - (INFORMATION/RESEARCH) Syntax for linting using clang-tidy and inclusion of all header files during the linting process was formed by AI after parsing the official documentation.
 - (INFORMATION/RESEARCH) Security change notice of some keywords in C++23 standard that clang-tidy showed, were in part researched by AI.
+
 
 
 
