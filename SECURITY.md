@@ -24,10 +24,10 @@ If the vulnerability is legitimate and reproducible, a fix will be implemented a
 
 ---
 
-# Policy for AI usage in Vulnerability Reports
+## Policy for AI usage in Vulnerability Reports
 Fraudulent or AI-generated reports will result in the reporter being banned. Please refer to the policy below to understand acceptable use of AI.
 
-## Acceptable Use of AI or LLM
+### Acceptable Use of AI or LLM
 Reporters must disclose all AI usage in their submission. AI is acceptable for the following purposes:
 
 - Rephrasing or translating manually discovered vulnerabilities for clarity, particularly for non-native English speakers or individuals with disabilities.
@@ -35,10 +35,14 @@ Reporters must disclose all AI usage in their submission. AI is acceptable for t
 - Improving readability of proof-of-concept code by renaming variables, functions, or methods, provided all changes have been manually verified.
 - Rewriting comments or documentation within proof-of-concept code for clarity, provided all changes have been manually verified.
 
-## Unacceptable Use of AI or LLM
+### Unacceptable Use of AI or LLM
 The following uses will result in immediate rejection and may lead to a ban:
 
 - Generating vulnerability reports without manual discovery, testing, or analysis.
 - Submitting theoretical or impractical scenarios that have no real-world applicability to this codebase.
 - Reporting issues unrelated to the codebase itself (e.g., claiming that malware disguises itself as conhost.exe is not a vulnerability in this project).
 - Using AI to fabricate technical details, exploit scenarios, or impact assessments.
+
+### Case study for the misuse of AI in vulnerability reports
+
+A case study of why this policy has been implemented is written here: [Why AI-Generated Vulnerability Reports Are Unreliable](https://github.com/revoconner/Headless-TTY/discussions/4)
