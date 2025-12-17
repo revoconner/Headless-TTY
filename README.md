@@ -6,7 +6,16 @@ A headless terminal emulator built for native Windows OS, that keeps `isatty()` 
   <img width="500" height="auto" alt="icon_github_page" src="https://github.com/user-attachments/assets/5c4e281c-0dc5-4f99-9f69-3e7bfbc18234" />
 </p>
 
+## How to install
 
+### Using Winget
+```batch
+winget install Revoconner.HeadlessTTY
+```
+
+### Manually
+1. Go to the [releases page](https://github.com/revoconner/Headless-TTY/releases)
+2. Download the latest version or one that suites your need
 
 
 ## What It Does
@@ -553,6 +562,7 @@ Read LICENSE for details, the LICENSE will take precedence over the above given 
 - (INFORMATION/RESEARCH) Some research for the use of conpty and newer api, was done using web search tool with AI.
 - (INFORMATION/RESEARCH) Syntax for linting using clang-tidy and inclusion of all header files during the linting process was formed by AI after parsing the official documentation.
 - (INFORMATION/RESEARCH) Security change notice of some keywords in C++23 standard that clang-tidy showed, were in part researched by AI.
+
 
 
 
