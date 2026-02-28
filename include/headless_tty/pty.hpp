@@ -52,14 +52,13 @@ public:
     void start_reading();
     void stop();
     bool is_running() const;
-    DWORD get_child_pid() const;
 
     /*
      Wait for the process to exit @param timeout_ms Timeout in milliseconds (INFINITE for no timeout)
      @return Exit code of the process, or -1 on error
      */
     int wait(DWORD timeout_ms = INFINITE);
-    bool resize(const TerminalSize& size);
+    bool resize(const TerminalSize& size); 
     /*
     Not used in the headless-tty since its
     meant to be headless. 
@@ -123,7 +122,6 @@ public:
     void set_output_callback(OutputCallback callback);
     void stop();
     bool is_running() const;
-    DWORD get_child_pid() const;
     int wait(DWORD timeout_ms = INFINITE);
     std::string get_last_error() const;
 
