@@ -480,8 +480,12 @@ void tray_console_input_forwarder(headless_tty::HeadlessTTY& tty) {
 
         char ch = record.Event.KeyEvent.uChar.AsciiChar;
         WORD vk = record.Event.KeyEvent.wVirtualKeyCode;
+        DWORD ctrlState = record.Event.KeyEvent.dwControlKeyState;
+        bool hasModifier = (ctrlState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED |
+                                         LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED)) != 0;
 
-        if (is_special_key(vk) && g_hHelperPipe != INVALID_HANDLE_VALUE) {
+        if ((is_special_key(vk) || hasModifier) && g_hHelperPipe != INVALID_HANDLE_VALUE) {
+            // Route through helper subprocess -> WriteConsoleInput to child
             INPUT_RECORD records[2] = {};
 
             records[0].EventType = KEY_EVENT;
@@ -498,11 +502,7 @@ void tray_console_input_forwarder(headless_tty::HeadlessTTY& tty) {
             DWORD written = 0;
             WriteFile(g_hHelperPipe, records, sizeof(records), &written, NULL);
         } else if (ch >= 32 && ch < 127) {
-            HANDLE hOut = g_hConsoleOut;
-            if (hOut != INVALID_HANDLE_VALUE) {
-                DWORD written;
-                WriteConsoleA(hOut, &ch, 1, &written, NULL);
-            }
+            // Printable chars go through PTY pipe; child echoes back via output callback
             if (tty.is_running()) {
                 tty.write(reinterpret_cast<const uint8_t*>(&ch), 1);
             }

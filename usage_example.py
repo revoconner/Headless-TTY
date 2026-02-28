@@ -95,15 +95,14 @@ def get_all_descendants(parent_pid):
 
 
 headless_tty_exe = "headless-tty.exe" # Use path r"path to headless-tty.exe" such as r"C:\my folder\headless-tty.exe", or if running from the same folder use "headless-tty.exe
-cmd_args = r"ipconfig -all >%temp%\ipconfig.txt && notepad %temp%\ipconfig.txt" #writing ipconfig -all data to a txt file in temp and opening that in notepad
+# cmd_args = r"ipconfig -all >%temp%\ipconfig.txt && notepad %temp%\ipconfig.txt" #writing ipconfig -all data to a txt file in temp and opening that in notepad
 
-# cmd_args = r"ping localhost -t"
+cmd_args = r"claude"
 
 cmd = [
     str(headless_tty_exe),
     "--sys-tray",
     "--",
-    "notepad",
     str(cmd_args)
 ]
 
