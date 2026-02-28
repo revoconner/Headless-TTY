@@ -524,8 +524,26 @@ int run_tray_mode(const Args& args) {
     headless_tty::Config config;
     config.size.cols = args.width;
     config.size.rows = args.height;
-    config.command = args.command;
-    config.args = args.args;
+
+    // Wrap in cmd /c so the helper subprocess can AttachConsole to cmd.exe
+    // (AttachConsole to ConPTY-hosted non-shell processes is unreliable)
+    std::wstring cmdLower = args.command;
+    for (auto& c : cmdLower) c = towlower(c);
+    bool already_cmd = (cmdLower == L"cmd" || cmdLower == L"cmd.exe" ||
+                        cmdLower == L"cmd /c" || cmdLower.find(L"cmd /c ") == 0 ||
+                        cmdLower.find(L"cmd.exe /c ") == 0);
+
+    if (already_cmd) {
+        config.command = args.command;
+        config.args = args.args;
+    } else {
+        config.command = L"cmd.exe";
+        std::wstring inner = args.command;
+        if (!args.args.empty()) {
+            inner += L" " + args.args;
+        }
+        config.args = L"/c " + inner;
+    }
 
     if (!tty.start(config)) {
         remove_tray();
