@@ -344,9 +344,81 @@ void remove_tray() {
     }
 }
 
+// Returns true if the VK code is a special key that needs WriteConsoleInput injection
+static bool is_special_key(WORD vk) {
+    if (vk == VK_RETURN || vk == VK_TAB || vk == VK_ESCAPE || vk == VK_BACK)
+        return true;
+    if (vk == VK_DELETE || vk == VK_INSERT || vk == VK_HOME || vk == VK_END)
+        return true;
+    if (vk == VK_PRIOR || vk == VK_NEXT)
+        return true;
+    if (vk >= VK_LEFT && vk <= VK_DOWN)
+        return true;
+    if (vk >= VK_F1 && vk <= VK_F12)
+        return true;
+    if (vk == VK_LSHIFT || vk == VK_RSHIFT || vk == VK_LCONTROL ||
+        vk == VK_RCONTROL || vk == VK_LMENU || vk == VK_RMENU)
+        return true;
+    return false;
+}
+
+// Inject INPUT_RECORD events into the child's console via the console dance:
+// FreeConsole -> AttachConsole(child) -> WriteConsoleInput -> FreeConsole -> AllocConsole
+static bool inject_input_to_child(DWORD child_pid, const INPUT_RECORD* records, DWORD count) {
+    if (count == 0 || child_pid == 0) return false;
+
+    bool had_console = g_console_visible.load();
+
+    // Invalidate handles before FreeConsole to stop output callback writes
+    if (had_console) {
+        g_hConsoleOut = INVALID_HANDLE_VALUE;
+        g_hConsoleIn = INVALID_HANDLE_VALUE;
+        FreeConsole();
+    }
+
+    // Attach to child's ConPTY console and inject
+    bool injected = false;
+    if (AttachConsole(child_pid)) {
+        HANDLE hChildIn = GetStdHandle(STD_INPUT_HANDLE);
+        if (hChildIn != INVALID_HANDLE_VALUE) {
+            DWORD written = 0;
+            injected = WriteConsoleInputA(hChildIn, records, count, &written) && (written == count);
+        }
+        FreeConsole();
+    }
+
+    // Re-allocate our display console
+    if (had_console) {
+        if (AllocConsole()) {
+            g_hConsoleOut = GetStdHandle(STD_OUTPUT_HANDLE);
+            g_hConsoleIn = GetStdHandle(STD_INPUT_HANDLE);
+
+            if (g_hConsoleOut != INVALID_HANDLE_VALUE) {
+                DWORD outMode = 0;
+                if (GetConsoleMode(g_hConsoleOut, &outMode)) {
+                    SetConsoleMode(g_hConsoleOut, outMode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+                }
+            }
+
+            if (g_hConsoleIn != INVALID_HANDLE_VALUE) {
+                SetConsoleMode(g_hConsoleIn, ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT);
+            }
+
+            SetConsoleTitleW(L"headless-tty");
+            SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
+        } else {
+            g_console_visible.store(false);
+        }
+    }
+
+    return injected;
+}
+
 // Console input forwarder for tray mode using raw input events
+// Special keys are injected via WriteConsoleInput to the child's console (for INK app compat)
+// Printable chars go through the PTY pipe (works fine for INK apps)
 void tray_console_input_forwarder(headless_tty::HeadlessTTY& tty) {
-    std::string lineBuffer;
+    DWORD child_pid = tty.get_child_pid();
 
     while (true) {
         if (g_shutdown_requested.load() || !tty.is_running()) {
@@ -354,7 +426,6 @@ void tray_console_input_forwarder(headless_tty::HeadlessTTY& tty) {
         }
 
         HANDLE hIn = g_hConsoleIn;
-        HANDLE hOut = g_hConsoleOut;
         if (!g_console_visible.load() || hIn == INVALID_HANDLE_VALUE) {
             Sleep(50);
             continue;
@@ -370,14 +441,12 @@ void tray_console_input_forwarder(headless_tty::HeadlessTTY& tty) {
             continue;
         }
 
-        // Read input events
         INPUT_RECORD record;
         DWORD eventsRead = 0;
         if (!ReadConsoleInputA(hIn, &record, 1, &eventsRead) || eventsRead == 0) {
             continue;
         }
 
-        // Only process key down events
         if (record.EventType != KEY_EVENT || !record.Event.KeyEvent.bKeyDown) {
             continue;
         }
@@ -385,32 +454,31 @@ void tray_console_input_forwarder(headless_tty::HeadlessTTY& tty) {
         char ch = record.Event.KeyEvent.uChar.AsciiChar;
         WORD vk = record.Event.KeyEvent.wVirtualKeyCode;
 
-        if (vk == VK_RETURN) {
-            // Echo newline and send line to PTY
-            if (hOut != INVALID_HANDLE_VALUE) {
-                DWORD written;
-                WriteConsoleA(hOut, "\r\n", 2, &written, NULL);
-            }
-            lineBuffer += "\r\n";
-            if (tty.is_running()) {
-                tty.write(reinterpret_cast<const uint8_t*>(lineBuffer.c_str()), lineBuffer.size());
-            }
-            lineBuffer.clear();
-        } else if (vk == VK_BACK) {
-            // Handle backspace
-            if (!lineBuffer.empty()) {
-                lineBuffer.pop_back();
-                if (hOut != INVALID_HANDLE_VALUE) {
-                    DWORD written;
-                    WriteConsoleA(hOut, "\b \b", 3, &written, NULL);
-                }
-            }
+        if (is_special_key(vk)) {
+            // Build key-down + key-up pair from the actual INPUT_RECORD fields
+            INPUT_RECORD records[2] = {};
+
+            records[0].EventType = KEY_EVENT;
+            records[0].Event.KeyEvent.bKeyDown = TRUE;
+            records[0].Event.KeyEvent.wRepeatCount = 1;
+            records[0].Event.KeyEvent.wVirtualKeyCode = record.Event.KeyEvent.wVirtualKeyCode;
+            records[0].Event.KeyEvent.wVirtualScanCode = record.Event.KeyEvent.wVirtualScanCode;
+            records[0].Event.KeyEvent.uChar.AsciiChar = record.Event.KeyEvent.uChar.AsciiChar;
+            records[0].Event.KeyEvent.dwControlKeyState = record.Event.KeyEvent.dwControlKeyState;
+
+            records[1] = records[0];
+            records[1].Event.KeyEvent.bKeyDown = FALSE;
+
+            inject_input_to_child(child_pid, records, 2);
         } else if (ch >= 32 && ch < 127) {
-            // Printable ASCII - echo and buffer
-            lineBuffer += ch;
+            // Printable ASCII - echo locally and send via PTY pipe
+            HANDLE hOut = g_hConsoleOut;
             if (hOut != INVALID_HANDLE_VALUE) {
                 DWORD written;
                 WriteConsoleA(hOut, &ch, 1, &written, NULL);
+            }
+            if (tty.is_running()) {
+                tty.write(reinterpret_cast<const uint8_t*>(&ch), 1);
             }
         }
     }

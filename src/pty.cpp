@@ -377,6 +377,10 @@ bool ConPTY::is_running() const {
     return m_running.load();
 }
 
+DWORD ConPTY::get_child_pid() const {
+    return m_processInfo.dwProcessId;
+}
+
 int ConPTY::wait(DWORD timeout_ms) {
     if (!m_hProcess) {
         return -1;
@@ -506,6 +510,11 @@ void HeadlessTTY::stop() {
 
 bool HeadlessTTY::is_running() const {
     return m_pty && m_pty->is_running();
+}
+
+DWORD HeadlessTTY::get_child_pid() const {
+    if (!m_pty) return 0;
+    return m_pty->get_child_pid();
 }
 
 int HeadlessTTY::wait(DWORD timeout_ms) {
