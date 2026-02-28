@@ -224,8 +224,12 @@ void show_console() {
     }
 
     if (g_hConsoleIn != INVALID_HANDLE_VALUE) {
-        // Enable line input with echo
-        SetConsoleMode(g_hConsoleIn, ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT);
+        // Raw input mode, no Quick Edit (prevents selection from blocking input)
+        DWORD inMode = 0;
+        GetConsoleMode(g_hConsoleIn, &inMode);
+        inMode &= ~ENABLE_QUICK_EDIT_MODE;
+        inMode |= ENABLE_EXTENDED_FLAGS;
+        SetConsoleMode(g_hConsoleIn, inMode);
     }
 
     SetConsoleTitleW(L"headless-tty");
