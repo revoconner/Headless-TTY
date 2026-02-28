@@ -16,6 +16,7 @@ Usage: headless-tty [options] [command] [args...]
 #include <thread>
 #include <atomic>
 #include <csignal>
+#include <cstring>
 #include <io.h>
 #include <fcntl.h>
 #include <shellapi.h>
@@ -34,6 +35,7 @@ static NOTIFYICONDATAW g_nid = {};
 static std::atomic<bool> g_console_visible{ false };
 static HANDLE g_hConsoleOut = INVALID_HANDLE_VALUE;
 static HANDLE g_hConsoleIn = INVALID_HANDLE_VALUE;
+static HANDLE g_hHelperPipe = INVALID_HANDLE_VALUE;
 
 void signal_handler(int signum) {
     (void)signum;
@@ -344,17 +346,109 @@ void remove_tray() {
     }
 }
 
-// Console input forwarder for tray mode using raw input events
-void tray_console_input_forwarder(headless_tty::HeadlessTTY& tty) {
-    std::string lineBuffer;
+// Helper subprocess entry point - permanently attached to child's console
+static int run_inject_helper(DWORD child_pid, HANDLE hPipe) {
+    if (!AttachConsole(child_pid)) {
+        return 2;
+    }
 
+    HANDLE hChildIn = GetStdHandle(STD_INPUT_HANDLE);
+    if (hChildIn == INVALID_HANDLE_VALUE) {
+        FreeConsole();
+        return 2;
+    }
+
+    INPUT_RECORD records[2];
+    while (true) {
+        DWORD bytesRead = 0;
+        if (!ReadFile(hPipe, records, sizeof(records), &bytesRead, NULL) || bytesRead == 0) {
+            break;
+        }
+
+        DWORD count = bytesRead / sizeof(INPUT_RECORD);
+        if (count > 0) {
+            DWORD written = 0;
+            WriteConsoleInputA(hChildIn, records, count, &written);
+        }
+    }
+
+    FreeConsole();
+    return 0;
+}
+
+// Spawn self as helper subprocess with anonymous pipe
+static bool start_inject_helper(DWORD child_pid) {
+    SECURITY_ATTRIBUTES sa = {};
+    sa.nLength = sizeof(sa);
+    sa.bInheritHandle = TRUE;
+
+    HANDLE hRead = NULL, hWrite = NULL;
+    if (!CreatePipe(&hRead, &hWrite, &sa, 0)) {
+        return false;
+    }
+
+    // Write end stays in parent, must not be inherited
+    SetHandleInformation(hWrite, HANDLE_FLAG_INHERIT, 0);
+
+    wchar_t exePath[MAX_PATH];
+    GetModuleFileNameW(NULL, exePath, MAX_PATH);
+
+    wchar_t cmdLine[512];
+    swprintf_s(cmdLine, L"\"%s\" --inject-helper %lu %llu",
+               exePath, child_pid, (unsigned long long)(uintptr_t)hRead);
+
+    STARTUPINFOW si = {};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi = {};
+
+    BOOL ok = CreateProcessW(
+        NULL, cmdLine, NULL, NULL,
+        TRUE,
+        CREATE_NO_WINDOW,
+        NULL, NULL, &si, &pi);
+
+    // Close read end in parent regardless
+    CloseHandle(hRead);
+
+    if (!ok) {
+        CloseHandle(hWrite);
+        return false;
+    }
+
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+
+    g_hHelperPipe = hWrite;
+    return true;
+}
+
+static bool is_special_key(WORD vk) {
+    if (vk == VK_RETURN || vk == VK_TAB || vk == VK_ESCAPE || vk == VK_BACK)
+        return true;
+    if (vk == VK_DELETE || vk == VK_INSERT || vk == VK_HOME || vk == VK_END)
+        return true;
+    if (vk == VK_PRIOR || vk == VK_NEXT)
+        return true;
+    if (vk >= VK_LEFT && vk <= VK_DOWN)
+        return true;
+    if (vk >= VK_F1 && vk <= VK_F12)
+        return true;
+    if (vk == VK_LSHIFT || vk == VK_RSHIFT || vk == VK_LCONTROL ||
+        vk == VK_RCONTROL || vk == VK_LMENU || vk == VK_RMENU)
+        return true;
+    return false;
+}
+
+// Console input forwarder for tray mode
+// Special keys -> pipe to helper subprocess -> WriteConsoleInput to child
+// Printable chars -> PTY pipe (works for INK apps)
+void tray_console_input_forwarder(headless_tty::HeadlessTTY& tty) {
     while (true) {
         if (g_shutdown_requested.load() || !tty.is_running()) {
             break;
         }
 
         HANDLE hIn = g_hConsoleIn;
-        HANDLE hOut = g_hConsoleOut;
         if (!g_console_visible.load() || hIn == INVALID_HANDLE_VALUE) {
             Sleep(50);
             continue;
@@ -370,14 +464,12 @@ void tray_console_input_forwarder(headless_tty::HeadlessTTY& tty) {
             continue;
         }
 
-        // Read input events
         INPUT_RECORD record;
         DWORD eventsRead = 0;
         if (!ReadConsoleInputA(hIn, &record, 1, &eventsRead) || eventsRead == 0) {
             continue;
         }
 
-        // Only process key down events
         if (record.EventType != KEY_EVENT || !record.Event.KeyEvent.bKeyDown) {
             continue;
         }
@@ -385,32 +477,30 @@ void tray_console_input_forwarder(headless_tty::HeadlessTTY& tty) {
         char ch = record.Event.KeyEvent.uChar.AsciiChar;
         WORD vk = record.Event.KeyEvent.wVirtualKeyCode;
 
-        if (vk == VK_RETURN) {
-            // Echo newline and send line to PTY
-            if (hOut != INVALID_HANDLE_VALUE) {
-                DWORD written;
-                WriteConsoleA(hOut, "\r\n", 2, &written, NULL);
-            }
-            lineBuffer += "\r\n";
-            if (tty.is_running()) {
-                tty.write(reinterpret_cast<const uint8_t*>(lineBuffer.c_str()), lineBuffer.size());
-            }
-            lineBuffer.clear();
-        } else if (vk == VK_BACK) {
-            // Handle backspace
-            if (!lineBuffer.empty()) {
-                lineBuffer.pop_back();
-                if (hOut != INVALID_HANDLE_VALUE) {
-                    DWORD written;
-                    WriteConsoleA(hOut, "\b \b", 3, &written, NULL);
-                }
-            }
+        if (is_special_key(vk) && g_hHelperPipe != INVALID_HANDLE_VALUE) {
+            INPUT_RECORD records[2] = {};
+
+            records[0].EventType = KEY_EVENT;
+            records[0].Event.KeyEvent.bKeyDown = TRUE;
+            records[0].Event.KeyEvent.wRepeatCount = 1;
+            records[0].Event.KeyEvent.wVirtualKeyCode = record.Event.KeyEvent.wVirtualKeyCode;
+            records[0].Event.KeyEvent.wVirtualScanCode = record.Event.KeyEvent.wVirtualScanCode;
+            records[0].Event.KeyEvent.uChar.AsciiChar = record.Event.KeyEvent.uChar.AsciiChar;
+            records[0].Event.KeyEvent.dwControlKeyState = record.Event.KeyEvent.dwControlKeyState;
+
+            records[1] = records[0];
+            records[1].Event.KeyEvent.bKeyDown = FALSE;
+
+            DWORD written = 0;
+            WriteFile(g_hHelperPipe, records, sizeof(records), &written, NULL);
         } else if (ch >= 32 && ch < 127) {
-            // Printable ASCII - echo and buffer
-            lineBuffer += ch;
+            HANDLE hOut = g_hConsoleOut;
             if (hOut != INVALID_HANDLE_VALUE) {
                 DWORD written;
                 WriteConsoleA(hOut, &ch, 1, &written, NULL);
+            }
+            if (tty.is_running()) {
+                tty.write(reinterpret_cast<const uint8_t*>(&ch), 1);
             }
         }
     }
@@ -437,6 +527,9 @@ int run_tray_mode(const Args& args) {
         remove_tray();
         return 1;
     }
+
+    // Start helper subprocess for key injection
+    start_inject_helper(tty.get_child_pid());
 
     // Set output callback AFTER start() - m_pty must exist first
     tty.set_output_callback([](const uint8_t* data, size_t length) {
@@ -475,6 +568,12 @@ int run_tray_mode(const Args& args) {
 
     // Cleanup
     g_shutdown_requested.store(true);
+
+    if (g_hHelperPipe != INVALID_HANDLE_VALUE) {
+        CloseHandle(g_hHelperPipe);
+        g_hHelperPipe = INVALID_HANDLE_VALUE;
+    }
+
     tty.stop();
 
     // Input thread will exit on next loop iteration (100ms max)
@@ -494,6 +593,13 @@ int run_tray_mode(const Args& args) {
 
 
 int main(int argc, char* argv[]) {
+    // Internal helper mode - spawned by parent for key injection
+    if (argc >= 4 && strcmp(argv[1], "--inject-helper") == 0) {
+        DWORD pid = (DWORD)strtoul(argv[2], NULL, 10);
+        HANDLE pipe = (HANDLE)(uintptr_t)_strtoui64(argv[3], NULL, 10);
+        return run_inject_helper(pid, pipe);
+    }
+
     Args args = parse_args(argc, argv);
 
     // Attach to parent console only for help/error output
