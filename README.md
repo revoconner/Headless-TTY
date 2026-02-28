@@ -27,6 +27,8 @@ winget install Revoconner.HeadlessTTY
 - ANSI escape codes pass through correctly
 - v2.5.0 - Now supports tray icon using --sys-tray argument. If you need a console for a long running process to see logs, or outputs just show from system tray and hide it back.
 - v2.5.0 - Right-click tray icon to show/hide console on demand with full color output and VT sequences output support.
+- v2.6.0 - Full special key support in tray mode (Enter, Tab, Escape, arrows, F-keys, Ctrl/Alt combos) for INK framework TUI apps like Claude CLI and Gemini CLI.
+- v2.6.0 - Key injection helper is now built into the binary -- separate messenger.exe is no longer needed.
 
 ## Why This Matters
 
@@ -173,6 +175,7 @@ Low-level ConPTY wrapper.
 | `start_reading()` | Start background read thread |
 | `stop()` | Terminate process and cleanup |
 | `is_running()` | Check if process is still running |
+| `get_child_pid()` | Get the spawned child process PID |
 | `wait(timeout)` | Wait for process to exit |
 | `resize(size)` | Resize the PTY |
 
@@ -187,6 +190,7 @@ High-level wrapper that manages the full lifecycle.
 | `set_output_callback(cb)` | Set callback for output |
 | `stop()` | Stop the process |
 | `is_running()` | Check if running |
+| `get_child_pid()` | Get child process PID |
 | `wait(timeout)` | Wait for exit |
 
 ## How It Works
@@ -422,64 +426,23 @@ if (m_hJob) {
 
 **To disable child->parent termination**, remove `monitor_loop()` and related code. 
 
-## Helper file - Messenger.cpp
+## Key Injection in Tray Mode
 
-This tiny executable file must be spawned with UAC elevation. 
-Mostly needed if you want an INK - https://github.com/vadimdemedes/ink 
-app such as gemini cli or claude code...
-you will need their pid and this to send message.
+INK framework TUI apps (Claude CLI, Gemini CLI, etc.) don't process special keys (Enter, Tab, Escape, arrows, etc.) when sent as raw bytes through the PTY pipe. They need proper `INPUT_RECORD` events via `WriteConsoleInput`.
 
-Such apps, while will get the message from emulator,
-but won't process return key to send.
+Since v2.6.0, headless-tty handles this automatically in `--sys-tray` mode using a self-spawning helper subprocess:
 
+1. After starting the child process, headless-tty spawns a copy of itself with a hidden `--inject-helper` flag
+2. The helper permanently attaches to the child's console via `AttachConsole`
+3. Special keys and modifier combos (Ctrl/Alt) are sent from the parent to the helper through an anonymous pipe
+4. The helper injects them as `INPUT_RECORD` events via `WriteConsoleInput`
+5. Printable characters still go through the PTY pipe as before
 
-**Implementation pseudocode:**
+Commands in tray mode are automatically wrapped in `cmd /c` (unless the command is already `cmd` or `cmd.exe`) because `AttachConsole` to ConPTY-hosted non-shell processes is unreliable -- `cmd.exe` fully initializes the console session which makes attachment reliable.
 
-```python
-pseudocode: messenger_wrapper.py
+The helper process is invisible (`CREATE_NO_WINDOW`) and exits automatically when the parent closes the pipe.
 
-import os, time, hmac, hashlib, subprocess, secrets
-from pathlib import Path
-
-class MessengerAuth:
-    def __init__(self, target_pid, target_name):
-        self.secret = secrets.token_bytes(32)  # Raw bytes
-        self.target_pid = target_pid
-        self.target_name = target_name
-        self.pipe_name = f"\\\\.\\pipe\\InjectorAuth_{os.getpid()}"
-        
-    def start_pipe_server(self):
-        # Create named pipe, serve on connect:
-        # Send: f"{self.secret.hex()}\n{self.target_pid}\n{self.target_name}"
-        # Verify caller binary hash before responding (optional)
-        pass
-    
-    def sign(self, command):
-        ts = str(int(time.time()))
-        msg = f"{self.target_pid}|{command}|{ts}"
-        sig = hmac.new(self.secret, msg.encode(), hashlib.sha256).hexdigest()
-        return ts, sig
-    
-    def send(self, command):
-        ts, sig = self.sign(command)
-        result = subprocess.run([
-            "messenger.exe",
-            str(self.target_pid),
-            command,
-            ts,
-            sig
-        ])
-        return result.returncode
-
-# Usage
-auth = MessengerAuth(pid=12345, target_name="claude.exe")
-auth.start_pipe_server()  # In background thread
-
-auth.send("hello world")  # Text + Enter
-auth.send("--tab")        # Special key
-auth.send("--escape")
-
-```
+**No separate messenger.exe binary is needed anymore.** The `Helper/messenger.cpp` file remains in the repository for reference but is no longer built or required.
 
 ---
 
@@ -516,7 +479,18 @@ auth.send("--escape")
 - Closing console window exits the application
 - Child process exit automatically removes tray icon
 - Help message now displays when running with `-h` or `--help` from command line
-    
+
+#### 2.6.0
+**Integrated Key Injection for Tray Mode**
+- Full special key support in tray mode: Enter, Tab, Escape, Backspace, Delete, arrows, Home, End, Page Up/Down, F1-F12
+- Ctrl and Alt modifier combos (Ctrl+C, Ctrl+D, Alt+Tab, etc.) routed through key injection
+- Self-spawning helper subprocess replaces the separate messenger.exe binary
+- Commands automatically wrapped in `cmd /c` in tray mode for reliable console attachment
+- Disabled Quick Edit mode to prevent text selection from blocking input delivery
+- Printable characters sent directly through PTY pipe (no double echo)
+- Added `get_child_pid()` to both ConPTY and HeadlessTTY classes
+- Reverted from c++23 to c++17 for the main binary (messenger.exe build commented out)
+
 
 ---
 
