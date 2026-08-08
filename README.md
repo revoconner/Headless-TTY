@@ -1,6 +1,6 @@
 # Headless TTY 
 
-A headless terminal emulator built for native Windows OS, that keeps `isatty()` returning `true` for spawned processes while staying either completely invisible or hiding in system tray.
+A headless terminal wrapper built for native Windows OS, that keeps `isatty()` returning `true` for spawned processes while staying either completely invisible or hiding in system tray.
 
 <p align="center">
   <img width="500" height="auto" alt="icon_github_page" src="https://github.com/user-attachments/assets/5c4e281c-0dc5-4f99-9f69-3e7bfbc18234" />
