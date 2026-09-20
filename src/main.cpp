@@ -47,7 +47,7 @@ void print_usage(const char* program_name) {
     std::cerr << "Usage: " << program_name << " [options] [command] [args...]\n\n";
     std::cerr << "Options:\n";
     std::cerr << "  --sys-tray         Run with system tray icon (right-click for menu)\n";
-    std::cerr << "  --name <session>   Serve the terminal as a session, attach with: htty-client <session>\n";
+    std::cerr << "  --name <session>   Serve the terminal as a session, attach with: htty -a <session>\n";
     std::cerr << "  --wait             With --name, after the command exits stay until a client has collected the output\n";
     std::cerr << "  --help, -h         Show this help message\n";
     std::cerr << "\n";
@@ -562,6 +562,14 @@ int run_session_mode(const Args& args) {
         return 1;
     }
     session.serve();
+
+    // Tells a waiting htty -s that the command is really running. The event is absent when the server was started by hand.
+    std::wstring ready_name = std::wstring(headless_tty::READY_EVENT_PREFIX) + args.session_name;
+    HANDLE hReady = OpenEventW(EVENT_MODIFY_STATE, FALSE, ready_name.c_str());
+    if (hReady) {
+        SetEvent(hReady);
+        CloseHandle(hReady);
+    }
 
     while (tty.is_running() && !g_shutdown_requested.load()) {
         Sleep(100);

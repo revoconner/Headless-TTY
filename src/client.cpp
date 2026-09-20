@@ -1,7 +1,7 @@
-// Attach to a running headless-tty session.
+// Attach side of a headless-tty session, reached through htty -a <name>.
 // Ctrl-\ detaches and leaves the session alive.
-// usage: htty-client <name>
 
+#include "headless_tty/client.hpp"
 #include "headless_tty/protocol.hpp"
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -145,13 +145,7 @@ std::string to_utf8(const std::wstring& text) {
 
 }
 
-int wmain(int argc, wchar_t** argv) {
-    if (argc < 2 || !argv[1][0] || wcschr(argv[1], L'\\')) {
-        fwprintf(stderr, L"usage: htty-client <name>\n");
-        return 1;
-    }
-    std::wstring name = argv[1];
-
+int headless_tty::run_attach(const std::wstring& name) {
     wchar_t current[256];
     DWORD current_len = GetEnvironmentVariableW(SESSION_ENV_VAR, current, 256);
     if (current_len > 0 && current_len < 256 && name == current) {
@@ -163,7 +157,7 @@ int wmain(int argc, wchar_t** argv) {
     HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
     DWORD in_mode = 0, out_mode = 0;
     if (!GetConsoleMode(hIn, &in_mode) || !GetConsoleMode(hOut, &out_mode)) {
-        fwprintf(stderr, L"htty-client needs a console on stdin and stdout\n");
+        fwprintf(stderr, L"attaching needs a console on stdin and stdout\n");
         return 1;
     }
 

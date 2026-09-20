@@ -22,6 +22,9 @@ constexpr size_t MAX_FRAME_PAYLOAD = 1024 * 1024;
 // Full pipe path is this prefix followed by the session name
 constexpr wchar_t PIPE_PREFIX[] = L"\\\\.\\pipe\\htty-";
 
+// Event named with this prefix and the session name. htty -s creates it and the server sets it once the command is running.
+constexpr wchar_t READY_EVENT_PREFIX[] = L"Local\\htty-ready-";
+
 // Set inside a session so a client can refuse to attach to the session it runs in
 constexpr wchar_t SESSION_ENV_VAR[] = L"HTTY_SESSION";
 

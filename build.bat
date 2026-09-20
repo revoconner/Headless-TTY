@@ -8,13 +8,13 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
-echo Building executable...
-clang++ -O3 -Wall -Wextra -std=c++17 -fno-exceptions -I include -o headless-tty.exe src/pty.cpp src/session.cpp src/main.cpp resources/app.res -static -luser32 -lshell32 -ladvapi32 -Wl,/SUBSYSTEM:WINDOWS -Wl,/ENTRY:mainCRTStartup
+echo Building server...
+clang++ -O3 -Wall -Wextra -std=c++17 -fno-exceptions -I include -o htty-server.exe src/pty.cpp src/session.cpp src/main.cpp resources/app.res -static -luser32 -lshell32 -ladvapi32 -Wl,/SUBSYSTEM:WINDOWS -Wl,/ENTRY:mainCRTStartup
 
 if %ERRORLEVEL%==0 echo Build successful
 
-echo Building client...
-clang++ -O3 -Wall -Wextra -std=c++17 -fno-exceptions -I include -o htty-client.exe src/client.cpp -static
+echo Building front end...
+clang++ -O3 -Wall -Wextra -std=c++17 -fno-exceptions -I include -o headless-tty.exe src/htty.cpp src/client.cpp -static
 if %ERRORLEVEL%==0 echo Build successful
 
 echo Building helper...
