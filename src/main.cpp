@@ -9,6 +9,7 @@ Usage: headless-tty [options] [command] [args...]
  */
 
 #include "headless_tty/pty.hpp"
+#include "headless_tty/session.hpp"
 
 #include <iostream>
 #include <string>
@@ -46,6 +47,8 @@ void print_usage(const char* program_name) {
     std::cerr << "Usage: " << program_name << " [options] [command] [args...]\n\n";
     std::cerr << "Options:\n";
     std::cerr << "  --sys-tray         Run with system tray icon (right-click for menu)\n";
+    std::cerr << "  --name <session>   Serve the terminal as a session, attach with: htty-client <session>\n";
+    std::cerr << "  --wait             With --name, after the command exits stay until a client has collected the output\n";
     std::cerr << "  --help, -h         Show this help message\n";
     std::cerr << "\n";
     std::cerr << "If no command is specified, notepad.exe opens.\n";
@@ -54,6 +57,7 @@ void print_usage(const char* program_name) {
     std::cerr << "  " << program_name << " app_name\n";
     std::cerr << "  " << program_name << " cmd /c dir\n";
     std::cerr << "  " << program_name << " --sys-tray -- python -u main.py\n";
+    std::cerr << "  " << program_name << " --name build --wait -- cmd /c build.bat\n";
 }
 
 // Convert narrow string to wide string
@@ -77,6 +81,8 @@ struct Args {
     bool help = false;
     bool error = false;
     bool sys_tray = false;
+    std::wstring session_name;
+    bool wait = false;
     std::string error_msg;
 };
 
@@ -109,6 +115,17 @@ Args parse_args(int argc, char* argv[]) {
         }
         else if (arg == "--sys-tray") {
             args.sys_tray = true;
+        }
+        else if (arg == "--name") {
+            if (i + 1 >= argc) {
+                args.error = true;
+                args.error_msg = "--name requires a value";
+                return args;
+            }
+            args.session_name = to_wstring(argv[++i]);
+        }
+        else if (arg == "--wait") {
+            args.wait = true;
         }
         else if (arg == "--") {
             // Everything after "--" is the command and its arguments, important for other processes to pass its own arguments
@@ -143,6 +160,20 @@ Args parse_args(int argc, char* argv[]) {
             }
         }
         args.args = to_wstring(argsStr);
+    }
+
+    // The name becomes part of a pipe path, which cannot hold a backslash
+    if (args.session_name.find(L'\\') != std::wstring::npos) {
+        args.error = true;
+        args.error_msg = "--name cannot contain a backslash";
+    }
+    else if (args.wait && args.session_name.empty()) {
+        args.error = true;
+        args.error_msg = "--wait only works together with --name";
+    }
+    else if (args.sys_tray && !args.session_name.empty()) {
+        args.error = true;
+        args.error_msg = "--name and --sys-tray cannot be combined yet";
     }
 
     return args;
@@ -493,6 +524,60 @@ int run_tray_mode(const Args& args) {
 }
 
 
+// This is a GUI subsystem binary, so an error is only visible if the launching console is borrowed for it
+void report_error(const std::string& msg) {
+    if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+        FILE* dummy;
+        freopen_s(&dummy, "CONOUT$", "w", stderr);
+    }
+    std::cerr << "Error: " << msg << std::endl;
+}
+
+// Session mode: no local input or output, the terminal is only reachable through htty-client
+int run_session_mode(const Args& args) {
+    headless_tty::HeadlessTTY tty;
+
+    headless_tty::Config config;
+    config.size.cols = args.width;
+    config.size.rows = args.height;
+    config.command = args.command;
+    config.args = args.args;
+
+    // Opened before anything is spawned, so a name clash never starts and then kills a command
+    headless_tty::Session session(tty, args.session_name, config.size, args.wait);
+    if (!session.open()) {
+        report_error(session.get_last_error());
+        return 1;
+    }
+
+    // Inherited by the child, lets htty-client refuse to attach to the session it runs in
+    SetEnvironmentVariableW(headless_tty::SESSION_ENV_VAR, args.session_name.c_str());
+
+    tty.set_output_callback([&session](const uint8_t* data, size_t length) {
+        session.on_output(data, length);
+    });
+
+    if (!tty.start(config)) {
+        report_error("Failed to start headless TTY: " + tty.get_last_error());
+        return 1;
+    }
+    session.serve();
+
+    while (tty.is_running() && !g_shutdown_requested.load()) {
+        Sleep(100);
+    }
+
+    // Joins the PTY read thread first, so every byte of output is in the session before the exit code goes out
+    g_shutdown_requested.store(true);
+    tty.stop();
+
+    int exitCode = tty.wait(0);
+    if (exitCode < 0) exitCode = 0;
+    session.finish(exitCode);
+    return exitCode;
+}
+
+
 int main(int argc, char* argv[]) {
     Args args = parse_args(argc, argv);
 
@@ -548,6 +633,10 @@ int main(int argc, char* argv[]) {
 
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
+
+    if (!args.session_name.empty()) {
+        return run_session_mode(args);
+    }
 
     // Set stdout to binary mode for raw output (only if we have valid handles)
     if (has_console) {

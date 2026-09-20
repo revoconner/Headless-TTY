@@ -26,8 +26,8 @@ constexpr wchar_t DETACH_KEY = 0x1C;  // Ctrl-backslash
 // Soft reset, clear and home. Drawn before a replay so stale local state does not mix with it, without wiping the local scrollback like a hard reset would.
 constexpr char RESET_SCREEN[] = "\x1b[!p\x1b[2J\x1b[H";
 
-// Undo whatever modes the session left on: alt screen, colors, hidden cursor, mouse tracking, bracketed paste
-constexpr char RESTORE_TERMINAL[] = "\x1b[?1049l\x1b[0m\x1b[?25h\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?2004l\x1b[!p";
+// Undo whatever modes the session left on: alt screen, colors, hidden cursor, mouse tracking, focus events, bracketed paste
+constexpr char RESTORE_TERMINAL[] = "\x1b[?1049l\x1b[0m\x1b[?25h\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1004l\x1b[?2004l\x1b[!p";
 
 // Manual reset event, set once by whichever thread decides the client is done
 HANDLE g_hQuit = NULL;

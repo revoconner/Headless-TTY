@@ -313,6 +313,7 @@ void ConPTY::monitor_loop() {
 
     // Child exited - close the pseudo console to break pipes
     // This will cause read_loop's ReadFile to return, allowing clean exit
+    std::lock_guard<std::mutex> lock(m_pc_mutex);
     if (m_hPC && !m_stop_requested.load()) {
         ClosePseudoConsole(m_hPC);
         m_hPC = nullptr;
@@ -395,6 +396,7 @@ int ConPTY::wait(DWORD timeout_ms) {
 }
 
 bool ConPTY::resize(const TerminalSize& size) {
+    std::lock_guard<std::mutex> lock(m_pc_mutex);
     if (!m_hPC) {
         set_error("PTY not initialized");
         return false;
@@ -470,6 +472,9 @@ bool HeadlessTTY::start(const Config& config) {
     // m_config = config;  // Unused
     m_pty = std::make_unique<ConPTY>();
 
+    // Applied before reading starts, so a callback set ahead of start() sees the very first output
+    m_pty->set_output_callback(m_callback);
+
     if (!m_pty->initialize(config.size)) {
         return false;
     }
@@ -493,9 +498,15 @@ bool HeadlessTTY::write(const uint8_t* data, size_t length) {
 }
 
 void HeadlessTTY::set_output_callback(OutputCallback callback) {
+    m_callback = std::move(callback);
     if (m_pty) {
-        m_pty->set_output_callback(std::move(callback));
+        m_pty->set_output_callback(m_callback);
     }
+}
+
+bool HeadlessTTY::resize(const TerminalSize& size) {
+    if (!m_pty) return false;
+    return m_pty->resize(size);
 }
 
 void HeadlessTTY::stop() {

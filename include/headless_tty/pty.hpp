@@ -98,6 +98,9 @@ private:
     std::thread m_monitor_thread;
     mutable std::mutex m_mutex;
 
+    // The monitor thread closes m_hPC when the child exits, resize() can run on another thread at that moment
+    std::mutex m_pc_mutex;
+
     // Callbacks
     OutputCallback m_output_callback;
     mutable std::string m_last_error;
@@ -120,6 +123,7 @@ public:
     bool write(const std::string& input);
     bool write(const uint8_t* data, size_t length);
     void set_output_callback(OutputCallback callback);
+    bool resize(const TerminalSize& size);
     void stop();
     bool is_running() const;
     int wait(DWORD timeout_ms = INFINITE);
@@ -127,6 +131,7 @@ public:
 
 private:
     std::unique_ptr<ConPTY> m_pty;
+    OutputCallback m_callback;
     // Config m_config;  // Unused - kept for potential future use
 };
 
